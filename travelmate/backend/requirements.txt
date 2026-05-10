@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+python-dotenv
+httpx
+pydantic
+pydantic-settings
+sqlalchemy
+redis
+reportlab
