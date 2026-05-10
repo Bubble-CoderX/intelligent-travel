@@ -93,9 +93,10 @@ async def route_intent(user_message: str, device_id: str) -> dict:
         return {"intent": intent, "reply": reply, "layer": "regex", "safety": safety}
 
     # 2. 第二层：AI 意图识别
-    intent_prompt = INTENT_RECOGNITION_PROMPT.format(
-        user_message=user_message,
-        user_preferences=_get_user_preferences(device_id),
+    intent_prompt = INTENT_RECOGNITION_PROMPT.replace(
+        "{user_message}", user_message
+    ).replace(
+        "{user_preferences}", _get_user_preferences(device_id)
     )
     raw_response = await call_llm(
         messages=[{"role": "user", "content": user_message}],
@@ -120,12 +121,20 @@ async def route_intent(user_message: str, device_id: str) -> dict:
     # 3. 输出安全检查
     output_safety = output_safety_check(raw_response)
 
+    intent = intent_data.get("intent", "CHAT")
+    reasoning = intent_data.get("reasoning", "")
+    extracted = intent_data.get("extracted_data", {})
+
+    # 阶段三：AI 层仅做意图识别，回复由后续阶段接入实际服务后生成
+    reply = f"已识别你的意图：{intent}。{reasoning}"
+
     return {
-        "intent": intent_data.get("intent", "CHAT"),
+        "intent": intent,
         "sub_intent": intent_data.get("sub_intent", "chat_general"),
         "confidence": intent_data.get("confidence", 0.5),
-        "reasoning": intent_data.get("reasoning", ""),
-        "extracted_data": intent_data.get("extracted_data", {}),
+        "reasoning": reasoning,
+        "extracted_data": extracted,
+        "reply": reply,
         "layer": "ai",
         "safety": output_safety,
     }
