@@ -1,9 +1,22 @@
-from fastapi import FastAPI
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.chat import router as chat_router
+from app.api.memory import router as memory_router
+from app.api.trip import router as trip_router
+from app.api.proactive import router as proactive_router
+from app.models.database import init_db
 
-app = FastAPI(title="TravelMate API", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    yield
+
+
+app = FastAPI(title="TravelMate API", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -14,8 +27,22 @@ app.add_middleware(
 )
 
 app.include_router(chat_router)
+app.include_router(memory_router)
+app.include_router(trip_router)
+app.include_router(proactive_router)
 
 
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.websocket("/ws/{device_id}")
+async def websocket_endpoint(websocket: WebSocket, device_id: str):
+    await websocket.accept()
+    try:
+        while True:
+            data = await websocket.receive_text()
+            await websocket.send_text(f"Echo: {data}")
+    except WebSocketDisconnect:
+        pass

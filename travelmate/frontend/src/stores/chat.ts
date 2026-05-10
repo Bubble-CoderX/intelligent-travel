@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type { Message } from '@/types/chat'
 import api from '@/api/client'
+import { getDeviceId } from '@/utils/device'
 
 export const useChatStore = defineStore('chat', () => {
   const messages = ref<Message[]>([])
@@ -33,14 +34,17 @@ export const useChatStore = defineStore('chat', () => {
 
     isLoading.value = true
     try {
-      const res = await api.post('/chat', { message: content })
+      const res = await api.post('/chat', {
+        message: content,
+        device_id: getDeviceId(),
+      })
       const data = res.data
       addMessage({
         id: crypto.randomUUID(),
         role: 'assistant',
         content: data.reply,
         timestamp: Date.now(),
-        type: data.type ?? 'text',
+        type: data.message_type ?? 'text',
         metadata: data.metadata,
       })
     } catch {

@@ -1,22 +1,15 @@
-from fastapi import APIRouter, Header
-from pydantic import BaseModel
+from fastapi import APIRouter
+
+from app.models.schemas import ChatRequest, ChatResponse
 
 router = APIRouter()
 
 
-class ChatRequest(BaseModel):
-    message: str
-
-
-class ChatResponse(BaseModel):
-    reply: str
-    type: str = "text"
-    metadata: dict | None = None
-
-
 @router.post("/chat", response_model=ChatResponse)
-async def chat(req: ChatRequest, x_device_id: str = Header(default="")):
+async def chat_endpoint(req: ChatRequest):
+    # 阶段二：仅回显，后续接入意图管道
     return ChatResponse(
-        reply=f"你说了：{req.message}",
-        type="text",
+        reply=f"收到你的消息：{req.message}",
+        intent="chat",
+        message_type="text",
     )

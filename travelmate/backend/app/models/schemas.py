@@ -1,9 +1,38 @@
 from __future__ import annotations
 
 from datetime import date as DateType, datetime
+from enum import Enum
 
 from pydantic import BaseModel, Field
 
+
+# ── 对话相关 ──────────────────────────────────────────────
+
+class IntentType(str, Enum):
+    TRIP_PLAN = "trip_plan"
+    WEATHER = "weather"
+    PREFERENCE = "preference"
+    KNOWLEDGE = "knowledge"
+    CHAT = "chat"
+    UNKNOWN = "unknown"
+
+
+class ChatRequest(BaseModel):
+    """对话请求。"""
+    message: str = Field(..., description="用户输入的消息")
+    device_id: str = Field(..., description="设备唯一标识")
+    session_id: str | None = Field(default=None, description="会话 ID")
+
+
+class ChatResponse(BaseModel):
+    """对话响应。"""
+    reply: str = Field(..., description="AI 回复内容")
+    intent: str = Field(default="chat", description="识别到的意图")
+    message_type: str = Field(default="text", description="消息类型：text / card / proactive")
+    metadata: dict | None = Field(default=None, description="附带元数据")
+
+
+# ── 行程相关 ──────────────────────────────────────────────
 
 class TripRequest(BaseModel):
     """用于生成新行程的请求体。"""
