@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 
 from app.models.database import get_db
 from app.services.llm_client import call_llm
+from app.services.map_service import search_places
 from app.services.memory_service import get_all_preferences, query_memory, save_memory
 from app.services.regex_matcher import regex_match
+from app.services.weather_service import get_weather_forecast
 from app.utils.safety import input_safety_check, output_safety_check
 
 logger = logging.getLogger(__name__)
@@ -128,6 +131,58 @@ async def route_intent(user_message: str, device_id: str) -> dict:
             reply = f"已记住你的偏好：{key} - {val}。之后的推荐会参考这个偏好哦～"
         else:
             reply = f"已识别你的偏好：{key} - {val}，但保存时遇到了问题。"
+
+    # 阶段五：WEATHER 意图 → 调用天气服务
+    elif intent == "WEATHER":
+        city = extracted.get("city", "")
+        if not city:
+            reply = "请问你想查哪个城市的天气呢？"
+        else:
+            try:
+                weather_data = await asyncio.to_thread(get_weather_forecast, city)
+                days = weather_data.get("days", [])
+                if days:
+                    today = days[0]
+                    reply = (
+                        f"🌤 **{city}天气预报**（{weather_data.get('report_time', '')}更新）\n\n"
+                        f"**今日**：白天 {today['day_weather']} {today['day_temp']}℃，"
+                        f"夜间 {today['night_weather']} {today['night_temp']}℃，"
+                        f"{today['day_wind']}风\n"
+                    )
+                    if len(days) > 1:
+                        future = " | ".join(
+                            f"{d['date'][-5:]} {d['day_weather']} {d['day_temp']}~{d['night_temp']}℃"
+                            for d in days[1:]
+                        )
+                        reply += f"\n**未来几天**：{future}"
+                else:
+                    reply = f"已查询{city}天气，但暂无预报数据。"
+            except Exception as exc:
+                logger.warning("天气查询失败：%s", exc)
+                reply = f"查询{city}天气时遇到了问题：{type(exc).__name__}。请稍后再试。"
+
+    # 阶段五：KNOWLEDGE 意图 → 调用地图服务搜索景点
+    elif intent == "KNOWLEDGE":
+        spot = extracted.get("spot_name", "")
+        city = extracted.get("city", "")
+        if not spot and not city:
+            reply = "请问你想了解哪个景点或城市的信息呢？"
+        else:
+            keyword = spot or city
+            try:
+                places = await asyncio.to_thread(search_places, keyword, city or None, 5)
+                if places:
+                    lines = [f"🔍 **{keyword} 相关地点**：\n"]
+                    for i, p in enumerate(places, 1):
+                        addr = p.get("address") or "暂无地址"
+                        lines.append(f"**{i}. {p['name']}**\n   📍 {addr}")
+                    reply = "\n".join(lines)
+                else:
+                    reply = f"暂时没有找到关于「{keyword}」的信息，你可以换个关键词试试。"
+            except Exception as exc:
+                logger.warning("景点查询失败：%s", exc)
+                reply = f"查询「{keyword}」时遇到了问题：{type(exc).__name__}。请稍后再试。"
+
     else:
         reply = f"已识别你的意图：{intent}。{reasoning}"
 
