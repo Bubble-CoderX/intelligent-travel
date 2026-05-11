@@ -14,6 +14,14 @@ const renderedContent = computed(() => {
 
 const isUser = computed(() => props.message.role === 'user')
 const isSystem = computed(() => props.message.role === 'system')
+const isProactive = computed(() => props.message.type === 'proactive')
+
+const proactiveLabel = computed(() => {
+  const t = props.message.metadata?.proactive_type
+  if (t === 'weather_alert') return '天气提醒'
+  if (t === 'arrival_greeting') return '到达问候'
+  return '主动消息'
+})
 </script>
 
 <template>
@@ -26,6 +34,13 @@ const isSystem = computed(() => props.message.role === 'system')
       class="mx-auto max-w-[80%] rounded-full bg-gray-200 px-4 py-1.5 text-center text-xs text-gray-500"
     >
       {{ message.content }}
+    </div>
+    <div
+      v-else-if="isProactive"
+      class="max-w-[75%] rounded-2xl rounded-bl-md border border-amber-100 bg-amber-50 px-4 py-3 text-sm leading-relaxed text-gray-800 shadow-sm"
+    >
+      <div class="mb-1 text-xs font-medium text-amber-600">{{ proactiveLabel }}</div>
+      <div class="prose prose-sm max-w-none prose-p:my-1 prose-ul:my-1 prose-li:my-0" v-html="renderedContent" />
     </div>
     <div
       v-else

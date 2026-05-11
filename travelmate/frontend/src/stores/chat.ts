@@ -22,6 +22,17 @@ export const useChatStore = defineStore('chat', () => {
     })
   }
 
+  function addProactiveMessage(content: string, msgType: string = 'proactive') {
+    addMessage({
+      id: crypto.randomUUID(),
+      role: 'assistant',
+      content,
+      timestamp: Date.now(),
+      type: 'proactive',
+      metadata: { proactive_type: msgType },
+    })
+  }
+
   async function sendMessage(content: string) {
     const userMsg: Message = {
       id: crypto.randomUUID(),
@@ -54,5 +65,5 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
-  return { messages, isLoading, sendMessage, addMessage, addSystemMessage }
+  return { messages, isLoading, sendMessage, addMessage, addSystemMessage, addProactiveMessage }
 })
