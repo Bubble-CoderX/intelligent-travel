@@ -48,6 +48,7 @@ function isTripCard(msg: { type: string }) {
           :days="Number(msg.metadata?.days ?? 0)"
           :budget="Number(msg.metadata?.budget ?? 0)"
           :summary="msg.content"
+          :safety-warning="String(msg.metadata?.safety_warning ?? '')"
         />
         <MessageBubble v-else :message="msg" />
       </template>

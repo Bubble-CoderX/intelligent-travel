@@ -4,6 +4,7 @@ from fastapi import APIRouter
 
 from app.models.schemas import ChatRequest, ChatResponse
 from app.services.intent_router import route_intent
+from app.utils.safety import check_rate_limit
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["chat"])
@@ -11,6 +12,14 @@ router = APIRouter(tags=["chat"])
 
 @router.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(req: ChatRequest):
+    # 请求频率限制：每设备每分钟最多 30 次
+    if not check_rate_limit(req.device_id):
+        return ChatResponse(
+            reply="请求太频繁了，请稍后再试～",
+            intent="rate_limited",
+            message_type="text",
+        )
+
     try:
         result = await route_intent(req.message, req.device_id)
     except Exception as exc:
@@ -47,6 +56,11 @@ async def chat_endpoint(req: ChatRequest):
         "confidence": result.get("confidence"),
         "safety": result.get("safety"),
     }
+
+    # 安全提醒：WARN/URGENT 级别附加警告信息
+    safety = result.get("safety", {})
+    if safety.get("level") in ("WARN", "URGENT") and safety.get("warning"):
+        metadata["safety_warning"] = safety["warning"]
 
     # 行程规划：把结构化数据也带上，方便前端渲染卡片
     if intent == "TRIP_PLAN":

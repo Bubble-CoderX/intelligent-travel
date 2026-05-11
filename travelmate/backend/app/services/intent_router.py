@@ -12,7 +12,7 @@ from app.services.rag_service import query_knowledge
 from app.services.regex_matcher import regex_match
 from app.services.trip_service import generate_trip_plan, query_trip_plans
 from app.services.weather_service import get_weather_forecast
-from app.utils.safety import input_safety_check, output_safety_check
+from app.utils.safety import input_safety_check, output_safety_check, filter_llm_output
 
 logger = logging.getLogger(__name__)
 
@@ -194,7 +194,17 @@ async def route_intent(user_message: str, device_id: str) -> dict:
                 reply = f"查询「{keyword}」时遇到了问题：{type(exc).__name__}。请稍后再试。"
 
     else:
-        reply = f"已识别你的意图：{intent}。{reasoning}"
+        # CHAT 意图：调用 LLM 生成真正的回复
+        chat_prompt = "你是「AI智游伴」，一个友好专业的旅行助手。请用简洁温暖的语言回复用户。"
+        reply = await call_llm(
+            messages=[{"role": "user", "content": user_message}],
+            system_prompt=chat_prompt,
+            temperature=0.7,
+            max_tokens=300,
+        )
+
+    # 输出安全过滤
+    reply = await filter_llm_output(reply)
 
     return {
         "intent": intent,
@@ -204,5 +214,5 @@ async def route_intent(user_message: str, device_id: str) -> dict:
         "extracted_data": extracted,
         "reply": reply,
         "layer": "ai",
-        "safety": output_safety,
+        "safety": safety,
     }

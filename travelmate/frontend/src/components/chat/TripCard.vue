@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { computed } from 'vue'
 import MarkdownIt from 'markdown-it'
 
 defineProps<{
@@ -8,6 +7,7 @@ defineProps<{
   days: number
   budget: number
   summary: string
+  safetyWarning?: string
 }>()
 
 const md = new MarkdownIt({ breaks: true, linkify: true })
@@ -29,6 +29,12 @@ const md = new MarkdownIt({ breaks: true, linkify: true })
     <div v-if="budget > 0" class="mt-3 flex items-center justify-between border-t pt-3">
       <span class="text-xs text-gray-400">预估预算</span>
       <span class="text-lg font-bold text-blue-600">¥{{ budget.toFixed(0) }}</span>
+    </div>
+    <div
+      v-if="safetyWarning"
+      class="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700"
+    >
+      {{ safetyWarning }}
     </div>
   </div>
 </template>

@@ -22,6 +22,10 @@ const proactiveLabel = computed(() => {
   if (t === 'arrival_greeting') return '到达问候'
   return '主动消息'
 })
+
+const safetyWarning = computed(() => {
+  return (props.message.metadata?.safety_warning as string) || ''
+})
 </script>
 
 <template>
@@ -52,7 +56,15 @@ const proactiveLabel = computed(() => {
       "
     >
       <div v-if="isUser" class="whitespace-pre-wrap">{{ message.content }}</div>
-      <div v-else class="prose prose-sm max-w-none prose-p:my-1 prose-ul:my-1 prose-li:my-0" v-html="renderedContent" />
+      <template v-else>
+        <div class="prose prose-sm max-w-none prose-p:my-1 prose-ul:my-1 prose-li:my-0" v-html="renderedContent" />
+        <div
+          v-if="safetyWarning"
+          class="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700"
+        >
+          {{ safetyWarning }}
+        </div>
+      </template>
     </div>
   </div>
 </template>
