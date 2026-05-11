@@ -533,3 +533,412 @@ Agent：写文档
 | 遇到问题时提供了完整的错误信息（截图/文本） | — |
 
 > **一句话记住**：写完代码只是完成了一半，让代码在真实环境跑通才是另一半——而后者往往花更多时间。
+
+---
+
+# 第三次会话协同记录（Phase 5-12 + 对话上下文）
+
+> 本次会话从阶段五一路推进到阶段十二（最终交付），并在交付后继续实现了对话上下文与记忆连贯性功能。过程中遇到了大量实际 Bug，调试过程极具学习价值。
+
+## 一、Phase 5-12 完成概览
+
+| 阶段 | 提交 | 核心内容 | 关键技术 |
+|------|------|----------|----------|
+| 阶段五 | — | 天气 API + 景点知识集成 | 和风天气 API、RAG 知识检索 |
+| 阶段六 | — | 行程规划服务 | LLM 生成行程、结构化输出 |
+| 阶段七 | `ae19d38` | RAG 景点知识服务 | ChromaDB 向量检索 + LLM 导游式回答 |
+| 阶段八 | `b8bf6b0` | 主动服务推送 | WebSocket 实时连接、APScheduler 定时提醒 |
+| 阶段九 | `d76a46d` | 前端-后端业务大串联 | 消息类型分支（card/weather/knowledge）、卡片渲染 |
+| 阶段十 | `a092fd0` | 安全系统完善 | 三级拦截（BLOCK/WARN/URGENT）、输出过滤、频率限制 |
+| 阶段十一 | `f38fd1c` | 语音交互 | Web Speech API 语音输入、SpeechSynthesis TTS 播报 |
+| 阶段十二 | `2dd44b9` | 联调优化、测试与部署 | E2E 测试、移动端适配、性能优化、UX 打磨 |
+| 对话上下文 | `89cf729` | 多轮对话 + 智能摘要 | 历史上下文加载、摘要压缩、正则预拦截 |
+
+---
+
+## 二、重点 Bug 调试记录
+
+### Bug 1：APScheduler 环境问题（阶段八）
+
+**现象**：启动 uvicorn 后报 `ModuleNotFoundError: No module named 'apscheduler'`
+
+**原因**：终端处于 conda base 环境，但 uvicorn 使用的是 `D:\Python` 下的独立 Python，两个环境的包不互通。
+
+**解决**：
+```bash
+D:\Python\python.exe -m pip install apscheduler
+```
+
+**教训**：多 Python 环境时，安装依赖必须用实际运行 uvicorn 的那个 Python。
+
+---
+
+### Bug 2：WARN/URGENT 安全提醒不显示（阶段十）
+
+**现象**：输入"我想一个人去偏远地区旅行"，应该显示安全警告，但回复中没有任何提醒。
+
+**排查过程**：
+
+1. 截图显示回复是 AI 的 raw reasoning（"意图分析..."），不是正常回复 → CHAT 分支返回了 `reasoning` 而非 `reply`
+2. 修复后回复正常了，但安全提醒仍然不显示
+
+**三个根因逐一修复**：
+
+| # | 根因 | 修复 |
+|---|------|------|
+| 1 | CHAT else 分支直接返回 `reasoning` 字段作为 reply | 改为调用 LLM 生成自然回复 |
+| 2 | return dict 中 `safety` 使用了 `output_safety`（每次都是 SAFE），覆盖了输入安全检查的结果 | 改为使用输入阶段的 `safety` |
+| 3 | 前端 TripCard 组件没有 `safetyWarning` prop | 新增 prop 并在卡片顶部显示警告横幅 |
+
+**教训**：
+- 管道式架构中，每个阶段的状态（如 safety level）必须完整传递到最终输出，不能被中间步骤覆盖
+- 前端组件的 prop 设计要和后端 metadata 字段一一对应
+
+---
+
+### Bug 3：语音识别有时能用有时不能（阶段十一）
+
+**现象**：点击麦克风按钮，有时正常识别，有时无反应。
+
+**排查过程**：
+
+用户报告"我把微信后台关了，他就正常了"。
+
+**原因**：微信桌面版占用了麦克风资源，Web Speech API 无法获取音频输入。
+
+**教训**：Web Speech API 依赖系统麦克风，其他应用占用麦克风时会静默失败。测试语音功能时确保没有其他录音应用在运行。
+
+---
+
+### Bug 4：对话上下文重复保存（对话上下文功能）
+
+**现象**：用户说"你好"后，对话历史里出现两条相同的用户消息。
+
+**排查过程**：
+
+查看 `chat.py` 代码，发现 `save_message` 在 `route_intent` 之前调用，而 `route_intent` 内部的某些分支（如 PREFERENCE）也会保存消息，导致重复。
+
+**修复**：将 `save_message` 移到 `route_intent` 之后，只在处理完成后保存一次。
+
+**教训**：消息保存应该遵循"处理后写入"原则，在意图管道完成后再保存，避免管道内部的副作用导致数据不一致。
+
+---
+
+### Bug 5："我叫小明"被误存为旅行偏好（对话上下文功能）
+
+**现象**：用户说"你好，我叫小明"，AI 把"小明"识别为 PREFERENCE，回复"已记住你的偏好：小明"。
+
+**排查过程**：
+
+1. **第一轮修复**：添加 `personal_keys` 排除列表（名字、年龄、职业等），在 PREFERENCE 保存前检查 key 是否在列表中
+2. **第二轮修复**：`elif` 分支陷阱——把 `intent = "CHAT"` 写在 elif 里，导致 else（CHAT 处理器）被完全跳过，reply 未赋值
+3. **第三轮修复**：DeepSeek 对"我叫小明"和"你还记得我吗"都过度分类为 PREFERENCE，personal_keys 无法穷举所有提取词
+4. **最终修复**：在 AI 调用前用正则预拦截（`我(叫|是|的名字)`、`你还?记得`），完全绕过 AI 意图识别
+
+**关键代码**：
+```python
+# 模块级别预编译
+_INTRO_RE = re.compile(r"我(叫|是|的名字)")
+_RECALL_RE = re.compile(r"(你还?记得|之前.*说过|刚才.*说过|上回.*说过)")
+
+# 在 AI 调用前拦截
+if _INTRO_RE.search(user_message) or _RECALL_RE.search(user_message):
+    intent = "CHAT"  # 直接走闲聊，不调 AI
+else:
+    # 才进入 AI 意图识别
+```
+
+**教训**：
+- **elif 分支陷阱**：在条件分支中修改变量后跳转，必须确保目标分支能被执行。如果用 elif 连接，修改 intent 后不能 fall through 到 else
+- **正则预拦截比修补 AI 分类更可靠**：对于明确的模式（自我介绍、回忆问题），用正则 100% 拦截，比依赖 AI 分类更稳定
+
+---
+
+### Bug 6：LLM 复读历史脏数据（对话上下文功能）
+
+**现象**：Edge 浏览器中，用户说"你好，我叫小明"，LLM 回复"好的，已记住你的偏好：小明"——和之前错误回复一模一样。
+
+**排查过程**（最精彩的一个）：
+
+1. **加日志验证**：在 `intent_router.py` 中加 `print()` 调试输出（`logger.info` 被 logging 配置过滤了，看不到）
+2. **日志结果**：
+   ```
+   [DEBUG] intro=True recall=False
+   [DEBUG] 模式拦截触发 → CHAT
+   [DEBUG] CHAT handler: history_len=10
+   [DEBUG] LLM 原始回复: '好的，已记住你的偏好：小明。之后的推荐会参考它～'
+   ```
+3. **关键发现**：拦截成功了（`intro=True`），intent 确实是 CHAT，但 **LLM 看到历史里有旧的错误回复就直接复读了**
+
+**根因**：Edge 浏览器的设备 ID 累积了 54 条旧对话记录（含之前的错误 PREFERENCE 回复），LLM 上下文里有这条回复就直接照搬。
+
+**修复**：
+1. 清除 Edge 设备的旧对话数据
+2. 实现摘要压缩机制：超过 30 条自动摘要旧消息，避免脏数据长期污染
+
+**教训**：
+- **LLM 是"鹦鹉"**：它会参考上下文中的回复模式，如果历史里有错误回复，它可能会复读
+- **数据清理是调试的一部分**：代码修好了不代表问题解决了，数据库里的脏数据仍在影响行为
+- **logger.info 不一定能看到**：Python logging 配置可能过滤 INFO 级别，调试时优先用 `print(flush=True)`
+
+---
+
+### Bug 7：代词消解——"那附近有什么好吃的"（对话上下文功能）
+
+**现象**：用户先问"西湖有什么好玩的"，然后问"那附近有什么好吃的"，AI 回复"请问你想了解哪个景点"——没有理解"那"指代西湖。
+
+**修复**：在 KNOWLEDGE 分支中，当没有提取到关键词时，从对话历史中用 LLM 提取最近提到的景点/城市名称：
+
+```python
+if not keyword:
+    history = await get_recent_history(device_id)
+    resolve_prompt = "从以下对话历史中提取最近提到的景点或城市名称，只返回名称。"
+    hist_text = "\n".join(f"{m['role']}: {m['content']}" for m in history)
+    resolved = await call_llm(
+        messages=[{"role": "user", "content": f"历史：{hist_text}\n当前：{user_message}"}],
+        system_prompt=resolve_prompt,
+        temperature=0.0, max_tokens=50,
+    )
+    keyword = resolved.strip() if resolved.strip() != "无" else ""
+```
+
+**教训**：代词消解（"那"、"那里"、"它"）是多轮对话的核心难题，最实用的方案是用 LLM 从历史中提取指代对象，而非维护复杂的规则引擎。
+
+---
+
+## 三、多浏览器设备 ID 问题
+
+**现象**：VSCode 内置浏览器测试正常，复制链接到 Edge 浏览器测试就出错。
+
+**排查**：
+
+1. 两个浏览器各有独立的 `localStorage`，生成不同的 `device_id`
+2. Edge 浏览器的设备 ID 有旧的脏数据（54 条），VSCode 浏览器是干净的
+3. 后端是同一个，但不同设备 ID 的对话历史完全不同
+
+**关键代码**（`frontend/src/utils/device.ts`）：
+```typescript
+export function getDeviceId(): string {
+  let deviceId = localStorage.getItem('travelmate_device_id')
+  if (!deviceId) {
+    deviceId = 'dev_' + crypto.randomUUID()
+    localStorage.setItem('travelmate_device_id', deviceId)
+  }
+  return deviceId
+}
+```
+
+**教训**：
+- 每个浏览器的 localStorage 是独立的，测试多浏览器时要注意 device_id 不同
+- 调试时如果怀疑设备 ID 问题，可以在后端日志中查看 `device=` 字段确认
+
+---
+
+## 四、对话历史摘要压缩机制
+
+### 设计原理
+
+| 阈值 | 行为 |
+|------|------|
+| 消息 ≤ 30 条 | 全部原文返回 |
+| 消息 > 30 条 | 旧消息自动摘要 + 最近 20 条原文 |
+| 摘要缓存 | 消息数变化 < 5 条时复用旧摘要，避免重复调用 LLM |
+
+### 关键文件
+
+`backend/app/services/context_service.py`：
+- `save_message()` — 保存单条消息（同步）
+- `get_recent_history()` — 异步获取对话历史，支持自动摘要
+
+### 摘要流程
+
+```
+用户发消息
+  ↓
+get_recent_history() 被调用
+  ↓
+消息数 ≤ 30？ → 是 → 返回全部原文
+  ↓ 否
+取最近 20 条原文
+  ↓
+摘要缓存有效？ → 是 → 用缓存摘要
+  ↓ 否
+从数据库取旧消息 → 发给 LLM 生成摘要 → 缓存
+  ↓
+返回 [摘要消息] + [最近 20 条原文]
+```
+
+### MAX_HISTORY 选择
+
+| 值 | 约对话轮数 | 占用 tokens | 适用场景 |
+|----|-----------|-------------|----------|
+| 10 | 5 轮 | ~500 | 极简场景 |
+| 20 | 10 轮 | ~1,000 | 轻量对话 |
+| **50** | **25 轮** | **~2,500** | **本项目选用** |
+| 100 | 50 轮 | ~5,000 | 深度对话 |
+
+DeepSeek 上下文窗口 128K tokens，50 条消息约 2500 tokens，占比 2%，留有充足空间给系统 prompt 和回复。
+
+---
+
+## 五、本次会话踩坑总结（给初学者）
+
+### 坑1：elif 分支修改变量后不能 fall through
+
+```python
+# ❌ 错误写法
+if intent == "PREFERENCE" and key in personal_keys:
+    intent = "CHAT"  # 改了 intent
+elif intent == "TRIP_PLAN":
+    ...
+else:
+    # 这里不会执行！因为上面的 elif 已经匹配了
+    # 虽然 intent 改成了 CHAT，但 else 是和 elif 平级的
+```
+
+```python
+# ✅ 正确写法：预处理 + 主链
+if intent == "PREFERENCE" and key in personal_keys:
+    intent = "CHAT"  # 先改
+
+if intent == "PREFERENCE":      # 用 if 而非 elif
+    ...
+elif intent == "TRIP_PLAN":
+    ...
+else:                           # intent="CHAT" 能正确走到这里
+    ...
+```
+
+**关键理解**：Python 的 if/elif/else 是"互斥分支"，一旦某个分支被执行，后面的 elif/else 全部跳过。在分支中修改控制变量不会影响当前的分支选择。
+
+### 坑2：logger.info 看不到输出
+
+```python
+# ❌ 调试时
+logger.info("[DEBUG] something happened")  # 可能被 logging 配置过滤
+
+# ✅ 调试时
+print(f"[DEBUG] something happened", flush=True)  # 一定能看到
+```
+
+**原因**：uvicorn 的 logging 配置默认只输出 WARNING 及以上级别，`logger.info` 被静默过滤。
+
+**最佳实践**：开发调试用 `print(flush=True)`，上线前删除。`flush=True` 确保输出立即显示，不被缓冲。
+
+### 坑3：LLM 会复读历史中的错误回复
+
+LLM 处理对话时，会将历史消息作为上下文。如果历史中包含系统之前给出的错误回复，LLM 可能会模仿或复读那个模式。
+
+**应对策略**：
+1. 及时清理数据库中的脏数据
+2. 实现摘要压缩，让旧消息逐渐"淡出"
+3. 在系统 prompt 中明确指示"基于事实回答，不要模仿历史回复格式"
+
+### 坑4：多浏览器测试时 localStorage 独立
+
+每个浏览器实例有独立的 localStorage，生成不同的 device_id。测试时要注意：
+- 同一个浏览器的不同标签页共享 device_id
+- 不同浏览器的 device_id 不同，对话历史也不同
+- 调试时在后端日志中确认 device_id 是否符合预期
+
+### 坑5：正则预拦截优于修补 AI 分类
+
+当 AI 意图分类不准确时，有两个修复方向：
+
+| 方向 | 做法 | 优劣 |
+|------|------|------|
+| 修补 AI | 调整 prompt、扩大排除列表 | 治标不治本，AI 可能换一种方式误分类 |
+| 正则预拦截 | 用正则匹配明确模式，绕过 AI | 100% 确定性，不依赖 AI 理解 |
+
+**结论**：对于模式明确的输入（自我介绍、回忆问题、紧急求助），正则预拦截是最可靠的方案。AI 意图识别留给真正需要理解语义的场景。
+
+---
+
+## 六、完整的调试方法论
+
+本次会话中最精彩的一次调试（Bug 6：LLM 复读脏数据）展示了完整的排查流程：
+
+```
+现象：Edge 浏览器回复错误
+  ↓
+假设1：代码没生效 → 检查代码 ✓ 已修改
+  ↓
+假设2：后端没重启 → 重启后仍然错误
+  ↓
+假设3：有多个后端在跑 → netstat 检查，只有一个
+  ↓
+假设4：拦截没触发 → 加 print 日志验证
+  ↓
+日志显示：拦截确实触发了，intent=CHAT
+  ↓
+假设5：CHAT 处理器有问题 → 加 print 看 LLM 返回值
+  ↓
+关键发现：LLM 原始回复就是错误内容！
+  ↓
+根因：历史数据中有旧的错误回复，LLM 照搬了
+  ↓
+修复：清库 + 摘要压缩机制
+```
+
+**核心方法**：不要猜，用日志验证。每一层假设都要有实际证据支撑。
+
+---
+
+## 七、项目最终状态
+
+### Git 提交记录（完整）
+
+```
+89cf729  对话上下文与记忆连贯性：多轮对话支持 + 智能摘要压缩
+2dd44b9  阶段十二：联调优化、测试与部署（最终交付）
+f38fd1c  阶段十一：语音交互（Web Speech API 语音输入 + TTS 播报）
+a092fd0  阶段十：安全系统完善（三级拦截 + 输出过滤 + 频率限制）
+d76a46d  阶段九：前端-后端业务大串联（WebSocket + 消息类型分支 + 卡片渲染）
+b8bf6b0  阶段八：主动服务（WebSocket 推送 + APScheduler 定时提醒）
+ae19d38  阶段七：RAG 景点知识服务（ChromaDB 向量检索 + LLM 导游式回答）
+e4fbfc2  阶段四文档：项目进展记录与 ChromaDB 环境问题排查全过程
+23d33d9  阶段四：记忆系统升级为 ChromaDB + SQLite 双写
+c7633da  修复 requirements.txt 中文注释导致 pip GBK 解码失败
+3fb08d6  阶段四：Hermes 记忆系统（纯 SQLite 实现）
+4c316a4  修复阶段三意图识别管道三个运行时错误
+14a38be  阶段三：三层意图识别管道
+0d9219e  阶段二：后端 API 网关与数据库初始化
+573a8a4  阶段一：前端对话界面基础
+5843d94  阶段零：搭建项目骨架，迁移核心服务
+```
+
+### 已完成模块（更新）
+
+| 层级 | 模块 | 状态 |
+|------|------|------|
+| 前端 | Vue 3 + Vite + TypeScript + Tailwind CSS + Pinia + Axios | ✅ |
+| 前端 | 聊天界面（ChatContainer / MessageBubble / ChatInput / TripCard） | ✅ |
+| 前端 | 语音输入（Web Speech API，continuous 模式） | ✅ |
+| 前端 | TTS 播报（SpeechSynthesis，Markdown 去除） | ✅ |
+| 前端 | WebSocket 实时连接 + 主动消息推送 | ✅ |
+| 前端 | 移动端响应式适配 | ✅ |
+| 后端 | FastAPI + CORS + 路由体系 | ✅ |
+| 后端 | SQLite 数据库（5 张表） | ✅ |
+| 后端 | 三层意图识别（安全→正则→AI）+ 正则预拦截 | ✅ |
+| 后端 | 天气 API / 地图 API / RAG 知识检索 | ✅ |
+| 后端 | 行程规划服务（LLM 生成） | ✅ |
+| 后端 | 安全系统（三级拦截 + 输出过滤 + 频率限制） | ✅ |
+| 后端 | 记忆系统（SQLite + ChromaDB 双写） | ✅ |
+| 后端 | 对话上下文（历史加载 + 摘要压缩） | ✅ |
+| 后端 | WebSocket 推送 + APScheduler 定时提醒 | ✅ |
+
+---
+
+## 八、三次会话协同模式对比
+
+| 维度 | 第一次（Phase 0-3） | 第二次（Phase 4 验证） | 第三次（Phase 5-12 + 上下文） |
+|------|---------------------|----------------------|-------------------------------|
+| 工作类型 | 从零写代码 | 排查环境问题 | 功能开发 + 深度调试 |
+| Bug 数量 | 4 个运行时错误 | 3 个环境问题 | 7+ 个逻辑 Bug |
+| 调试深度 | 浅（改代码即可） | 中（需理解环境） | 深（需追踪数据流） |
+| 关键技能 | 按方案执行 | 环境排查 | 端到端追踪 + 日志验证 |
+| 用户参与度 | 低（"继续下一阶段"） | 中（展示截图） | 高（持续反馈 + 验证） |
+
+**最大教训**：随着项目复杂度增加，Bug 的排查难度指数级上升。阶段三的 Bug 改一行代码就好，阶段十的 Bug 需要同时改前后端三个文件，对话上下文的 Bug 需要追踪从正则→AI→LLM→数据库→前端的完整链路。
+
+> **一句话记住**：代码越复杂，调试越需要系统性思维——不是"哪里报错改哪里"，而是"数据从哪里来，经过了什么变换，在哪里出了问题"。
