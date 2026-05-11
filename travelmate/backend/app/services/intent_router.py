@@ -9,6 +9,7 @@ from app.services.llm_client import call_llm
 from app.services.map_service import search_places
 from app.services.memory_service import get_all_preferences, query_memory, save_memory
 from app.services.regex_matcher import regex_match
+from app.services.trip_service import generate_trip_plan, query_trip_plans
 from app.services.weather_service import get_weather_forecast
 from app.utils.safety import input_safety_check, output_safety_check
 
@@ -131,6 +132,22 @@ async def route_intent(user_message: str, device_id: str) -> dict:
             reply = f"已记住你的偏好：{key} - {val}。之后的推荐会参考这个偏好哦～"
         else:
             reply = f"已识别你的偏好：{key} - {val}，但保存时遇到了问题。"
+
+    # 阶段六：TRIP_PLAN 意图 → 调用行程生成服务
+    elif intent == "TRIP_PLAN":
+        destination = extracted.get("destination", "")
+        trip_days = extracted.get("days")
+        if not destination:
+            reply = "请问你想去哪里旅行呢？告诉我目的地和天数，我来帮你规划～"
+        elif not trip_days:
+            reply = f"好的，你想去{destination}！请问计划玩几天呢？"
+        else:
+            try:
+                result = await generate_trip_plan(device_id, destination, int(trip_days))
+                reply = result["itinerary"]
+            except Exception as exc:
+                logger.warning("行程生成失败：%s", exc)
+                reply = f"生成{destination}行程时遇到了问题：{type(exc).__name__}。请稍后再试。"
 
     # 阶段五：WEATHER 意图 → 调用天气服务
     elif intent == "WEATHER":

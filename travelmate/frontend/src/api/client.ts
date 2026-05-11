@@ -3,7 +3,7 @@ import { getDeviceId } from '@/utils/device'
 
 const api = axios.create({
   baseURL: 'http://localhost:8000',
-  timeout: 30000,
+  timeout: 120000,
 })
 
 api.interceptors.request.use((config) => {
