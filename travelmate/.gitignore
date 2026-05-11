@@ -40,3 +40,6 @@ venv/
 
 # Chroma data
 data/chroma_db/
+
+# Claude Code session data
+.claude/
