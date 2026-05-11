@@ -8,6 +8,7 @@ from app.models.database import get_db
 from app.services.llm_client import call_llm
 from app.services.map_service import search_places
 from app.services.memory_service import get_all_preferences, query_memory, save_memory
+from app.services.rag_service import query_knowledge
 from app.services.regex_matcher import regex_match
 from app.services.trip_service import generate_trip_plan, query_trip_plans
 from app.services.weather_service import get_weather_forecast
@@ -178,26 +179,18 @@ async def route_intent(user_message: str, device_id: str) -> dict:
                 logger.warning("天气查询失败：%s", exc)
                 reply = f"查询{city}天气时遇到了问题：{type(exc).__name__}。请稍后再试。"
 
-    # 阶段五：KNOWLEDGE 意图 → 调用地图服务搜索景点
+    # 阶段五+七：KNOWLEDGE 意图 → RAG 知识检索 + LLM 导游式回答
     elif intent == "KNOWLEDGE":
         spot = extracted.get("spot_name", "")
         city = extracted.get("city", "")
-        if not spot and not city:
+        keyword = spot or city
+        if not keyword:
             reply = "请问你想了解哪个景点或城市的信息呢？"
         else:
-            keyword = spot or city
             try:
-                places = await asyncio.to_thread(search_places, keyword, city or None, 5)
-                if places:
-                    lines = [f"🔍 **{keyword} 相关地点**：\n"]
-                    for i, p in enumerate(places, 1):
-                        addr = p.get("address") or "暂无地址"
-                        lines.append(f"**{i}. {p['name']}**\n   📍 {addr}")
-                    reply = "\n".join(lines)
-                else:
-                    reply = f"暂时没有找到关于「{keyword}」的信息，你可以换个关键词试试。"
+                reply = await query_knowledge(user_message)
             except Exception as exc:
-                logger.warning("景点查询失败：%s", exc)
+                logger.warning("知识查询失败：%s", exc)
                 reply = f"查询「{keyword}」时遇到了问题：{type(exc).__name__}。请稍后再试。"
 
     else:

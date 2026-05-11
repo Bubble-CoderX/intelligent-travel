@@ -8,11 +8,13 @@ from app.api.memory import router as memory_router
 from app.api.trip import router as trip_router
 from app.api.proactive import router as proactive_router
 from app.models.database import init_db
+from app.services.rag_service import load_knowledge_base
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    load_knowledge_base()
     yield
 
 
