@@ -2,7 +2,98 @@
 
 ## 今日完成
 
-### 阶段三：三层意图识别管道（完成并修复）
+### 阶段零：搭建项目骨架，迁移核心服务（`5843d94`）
+
+**目标**：从零搭建前后端项目结构，把已有参考项目的核心服务迁移过来。
+
+**新增文件（37个，+6348行）**：
+
+| 层级 | 文件 | 作用 |
+|------|------|------|
+| 前端 | `frontend/` 完整目录 | Vue 3 + Vite + TypeScript + Tailwind CSS + Pinia + Axios |
+| 前端 | `src/api/client.ts` | Axios 实例，预留 X-Device-ID 拦截器 |
+| 前端 | `src/App.vue` | 应用入口组件 |
+| 后端 | `app/main.py` | FastAPI 入口，CORS 配置 |
+| 后端 | `app/core/config.py` | 环境变量统一管理（API Key、数据库路径等） |
+| 后端 | `app/models/schemas.py` | Pydantic 数据模型（行程、天气、地图等） |
+| 后端 | `app/services/map_service.py` | 高德地图 API 封装（景点搜索、路线规划） |
+| 后端 | `app/services/weather_service.py` | 天气 API 封装 |
+| 后端 | `app/services/cache_service.py` | Redis 缓存服务封装 |
+| 后端 | `app/services/export_service.py` | 行程导出为 PDF（ReportLab） |
+| 后端 | `data/` | 5 份目的地攻略文档（成都/大理/三亚/厦门/西安） |
+| 后端 | `requirements.txt` | Python 依赖清单 |
+| 配置 | `.gitignore` | 排除 node_modules、__pycache__、.env、*.db、venv |
+| 配置 | `.env.example` | 环境变量模板 |
+| 文档 | `AI智游伴-完整实现方案.md` | 12 阶段完整实现方案（含目录结构、里程碑验收表） |
+
+**关键决策**：
+- 配置管理用 `os.getenv()` 而非 pydantic-settings，避免引入额外依赖
+- 地图/天气/缓存/导出四个服务从参考项目迁移，接口不变，只调整导入路径
+
+---
+
+### 阶段一：前端对话界面基础（`573a8a4`）
+
+**目标**：实现可用的聊天界面，前后端能收发消息。
+
+**新增文件（7个，+375行）**：
+
+| 文件 | 作用 |
+|------|------|
+| `frontend/src/types/chat.ts` | 消息数据模型（Message 接口定义） |
+| `frontend/src/stores/chat.ts` | Pinia 聊天状态管理（消息列表、发送逻辑） |
+| `frontend/src/components/chat/ChatContainer.vue` | 聊天主容器（消息列表 + 滚动） |
+| `frontend/src/components/chat/MessageBubble.vue` | 消息气泡（支持 Markdown 渲染） |
+| `frontend/src/components/chat/ChatInput.vue` | 输入框组件（回车发送） |
+| `frontend/src/components/chat/TripCard.vue` | 行程卡片组件（预留，阶段六启用） |
+| `frontend/src/utils/device.ts` | 设备 ID 生成与 localStorage 持久化 |
+
+**修改文件**：
+- `backend/app/api/chat.py` — 新增 `/chat` POST 端点（回显消息）
+- `frontend/src/api/client.ts` — 添加 X-Device-ID 请求拦截器
+
+**关键决策**：
+- 设备识别用 localStorage 存储 UUID，每次请求通过 X-Device-ID Header 传给后端
+- MessageBubble 使用 markdown-it 渲染 AI 回复中的 Markdown 格式
+
+---
+
+### 阶段二：后端 API 网关与数据库初始化（`0d9219e`）
+
+**目标**：建立后端路由体系和 SQLite 数据库，为后续功能提供数据基础。
+
+**新增文件（4个，+165行）**：
+
+| 文件 | 作用 |
+|------|------|
+| `backend/app/models/database.py` | SQLite 初始化（创建 4 张表） |
+| `backend/app/api/memory.py` | `/memory` 路由占位 |
+| `backend/app/api/trip.py` | `/trip` 路由占位 |
+| `backend/app/api/proactive.py` | `/proactive` 路由占位 |
+
+**修改文件**：
+- `backend/app/main.py` — 新增 lifespan 管理、路由注册、启动时 `init_db()`
+- `backend/app/models/schemas.py` — 新增 ChatRequest/ChatResponse/IntentType 模型
+- `backend/app/api/chat.py` — 使用统一 schema，device_id 移入请求体
+- `frontend/src/stores/chat.ts` — device_id 通过请求体传递
+
+**数据库结构（4张表）**：
+
+| 表名 | 用途 | 关键字段 |
+|------|------|----------|
+| `devices` | 设备注册信息 | device_id, created_at |
+| `conversations` | 对话历史 | device_id, message, reply, intent, timestamp |
+| `user_preferences` | 用户偏好（记忆系统） | device_id, category, key, value, confidence |
+| `trip_plans` | 行程计划 | device_id, destination, days, itinerary JSON |
+
+**关键决策**：
+- 数据库文件路径：`backend/data/travelmate.db`（与 chroma_memory 同级）
+- `init_db()` 在 FastAPI lifespan 启动时自动调用，无需手动执行
+- 占位路由先注册但不实现，保证前端调用不会 404
+
+---
+
+### 阶段三：三层意图识别管道（`14a38be`，完成并修复）
 
 **新增文件（4个）**：
 - `backend/app/services/regex_matcher.py` — 第一层正则快速匹配（问候/告别/感谢/确认，>50字自动跳过）
@@ -14,7 +105,7 @@
 - `backend/app/api/chat.py` — 集成 intent_router，返回意图+元数据
 - `backend/app/core/config.py` — 新增 DEEPSEEK_API_KEY/BASE_URL/MODEL 配置
 
-### 阶段三 Bug 修复（4个运行时错误）
+### 阶段三 Bug 修复（`4c316a4`，4个运行时错误）
 
 | Bug | 原因 | 修复方式 |
 |-----|------|----------|
@@ -28,6 +119,7 @@
 ### Git 提交记录
 
 ```
+e4fbfc2  阶段四文档：项目进展记录与 ChromaDB 环境问题排查全过程
 23d33d9  阶段四：记忆系统升级为 ChromaDB + SQLite 双写
 c7633da  修复 requirements.txt 中文注释导致 pip GBK 解码失败
 3fb08d6  阶段四：Hermes 记忆系统（纯 SQLite 实现）
@@ -51,7 +143,7 @@ c7633da  修复 requirements.txt 中文注释导致 pip GBK 解码失败
 | 后端 | AI 意图识别（DeepSeek API，支持5种意图） | ✅ |
 | 后端 | 输入/输出安全检查（BLOCK/WARN/URGENT 三级） | ✅ |
 | 后端 | 迁移服务（地图/天气/缓存/导出/行程数据模型） | ✅ |
-| 后端 | 记忆系统：SQLite + ChromaDB 双写（语义检索 + 回退） | ✅ |
+| 后端 | 记忆系统：SQLite + ChromaDB 双写（语义检索 + 回退） | ✅ 已验证 |
 | 后端 | 记忆 API：GET/POST/DELETE /memory/{device_id}/preferences | ✅ |
 | 后端 | 意图管道集成：PREFERENCE 意图自动写入记忆 | ✅ |
 
@@ -79,12 +171,60 @@ python -c "from app.services.memory_service import save_memory, query_memory; sa
 
 > 注：未下载模型时系统自动回退到 SQLite LIKE 查询，功能不受影响。
 
+### 阶段四：Hermes 记忆系统（`3fb08d6` + `23d33d9`，环境验证完成）
+
+**代码变更**：
+
+| 提交 | 内容 | 文件 |
+|------|------|------|
+| `3fb08d6` | 纯 SQLite 记忆实现（写入/读取/删除/模糊检索） | `memory_service.py`（新增）、`memory.py`（实现端点）、`intent_router.py`（PREFERENCE 自动写入） |
+| `c7633da` | 修复 requirements.txt 中文注释导致 pip GBK 解码失败 | `requirements.txt` |
+| `23d33d9` | 升级为 ChromaDB + SQLite 双写，语义检索替代 LIKE | `memory_service.py`（重写）、`requirements.txt`（加 chromadb） |
+
+> Phase 4 代码在上次会话中已提交（`23d33d9`），但 ChromaDB 的 ONNX 向量模型尚未下载，
+> 语义检索实际回退到 SQLite LIKE。本次会话的核心任务是让 ChromaDB 真正生效。
+
+**遇到的三个环境问题及解决方案：**
+
+| # | 问题 | 现象 | 原因 | 解决方案 |
+|---|------|------|------|----------|
+| 1 | onnxruntime DLL 加载失败 | `ImportError: DLL load failed while importing onnxruntime_pybind11_state` | 项目 venv 由 Anaconda Python 3.12 创建，onnxruntime 编译时的 VC++ 运行时与 Anaconda 不匹配 | 用 `D:\Python\python.exe`（3.11.8）重建 venv，重新安装依赖 |
+| 2 | ONNX 模型下载极慢 | S3 源下载速度仅 ~20KB/s，79MB 预计 1 小时+ | `chroma-onnx-models.s3.amazonaws.com` 在国内延迟高，与 VPN 无关 | 用 HuggingFace 国内镜像（hf-mirror.com）下载，手动放入 `~/.cache/chroma/onnx_models/all-MiniLM-L6-v2/onnx/` |
+| 3 | 新 venv 中 SQLite 表不存在 | `sqlite3.OperationalError: no such table` | 重建环境后数据库文件为空，未自动初始化 | 正常启动 uvicorn 即可，`app.main` 的 lifespan 自动调用 `init_db()` |
+
+**验证结果（ChromaDB 语义检索 vs SQLite LIKE）：**
+
+```
+搜索 "price"         → ChromaDB 找到「每日预算: 500元」 ✅  |  SQLite LIKE 返回 [] ❌
+搜索 "accommodation"  → ChromaDB 找到「类型: 喜欢民宿」   ✅  |  SQLite LIKE 返回 [] ❌
+搜索 "辣"            → 两者均找到「忌口: 不吃辣」         ✅  |  （字面匹配，两者等价）
+```
+
+结论：ChromaDB 能跨语言理解语义（英文 price 匹配中文"每日预算"），SQLite LIKE 只做子串匹配。
+
+**端到端功能验证清单（全部通过）：**
+
+| 测试内容 | 输入 | 预期行为 | 结果 |
+|----------|------|----------|------|
+| 正则秒回 | `你好` | 不调用 LLM，瞬间返回问候语 | ✅ |
+| 安全拦截 | `怎么偷东西` | 拒绝请求，返回安全话术 | ✅ |
+| 偏好写入 | `我不吃辣` | AI 识别 PREFERENCE → 写入记忆 → 回复"已记住" | ✅ |
+| 重复偏好更新 | 再次说`我不吃辣` | 更新已有记录，confidence 递增 | ✅ |
+| 意图识别 | `我想去杭州玩3天` | AI 识别为 TRIP_PLAN | ✅ |
+| 语义检索 | `GET /memory/{id}/query?q=price` | ChromaDB 命中"每日预算" | ✅ |
+| 记忆上下文 | 存入偏好后规划行程 | AI 的 reasoning 参考了历史偏好 | ✅ |
+
+---
+
 ## 关键决策记录
 
 - **DEC-001**: 配置管理用 `os.getenv()` 而非 pydantic-settings，避免引入额外依赖
 - **DEC-002**: LLM 客户端使用 httpx 异步，温度 0.1（意图识别需稳定输出）
 - **DEC-003**: 意图识别 Prompt 中的 JSON 示例使用 `{user_message}` 占位符 + `.replace()` 替换，避免 `.format()` 与 JSON 花括号冲突
 - **DEC-004**: 大于 50 字符的消息跳过正则层直接进 AI 层
+- **DEC-005**: 项目 venv 使用 `D:\Python`（3.11.8）而非 Anaconda，确保 onnxruntime DLL 兼容
+- **DEC-006**: ONNX 模型通过 HuggingFace 国内镜像下载，手动放置到 ChromaDB 缓存目录，避免 S3 慢速问题
+- **DEC-007**: ChromaDB 缓存目录统一放在 `~/.cache/chroma/onnx_models/`，不在项目内，便于跨项目复用
 
 ## 关键文件索引
 
@@ -245,3 +385,151 @@ Phase 3 的 bug 修复是独立的一个 commit（`4c316a4`），而不是 squas
 | 关键决策果断（如回退 .gitignore 修改） | — |
 
 > **一句话记住**：方案文档是你的设计图，Agent 是施工队，Git 是你的安全网，阶段验证是你的竣工验收。
+
+---
+
+# 第二次会话协同经验（Phase 4 环境验证）
+
+> 本次会话的核心不是写新代码，而是"让已有代码在真实环境中跑通"——这恰恰是初学者最容易卡住的环节。
+
+## 一、本次会话做了什么
+
+上次会话完成了 ChromaDB + SQLite 双写代码并提交，但 ONNX 向量模型未下载，语义检索实际是假的（回退到 SQLite LIKE）。本次会话用全部时间解决了三个环境问题，最终让 ChromaDB 余弦相似度检索真正生效，并完成了端到端验证。
+
+**没有一行业务代码变更**，但这是项目从"能跑"到"跑对了"的关键一步。
+
+## 二、本次协同与上次的关键区别
+
+### 上次会话（Phase 0-3）：从零写代码
+
+| 特征 | 具体表现 |
+|------|----------|
+| 工作内容 | 按方案文档逐阶段实现新功能 |
+| Agent 输出 | 大量新文件、新代码 |
+| 用户指令风格 | "继续下一阶段"（宏观指令） |
+| 验证方式 | 功能是否能用（黑盒） |
+
+### 本次会话（Phase 4 验证）：排查环境问题
+
+| 特征 | 具体表现 |
+|------|----------|
+| 工作内容 | 诊断、调试、验证已有代码 |
+| Agent 输出 | 少量配置变更，大量排查过程 |
+| 用户指令风格 | "怎么验证区别"（精确问题） |
+| 验证方式 | 对比测试 + 数据对比（白盒） |
+
+**启示**：写代码和调代码是两种完全不同的技能，初学者往往低估后者的工作量。
+
+## 三、踩过的坑（给初学者的环境问题清单）
+
+### 坑 1：Python 环境不等于"装了 Python"
+
+**现象**：`onnxruntime DLL load failed`，代码本身没有任何问题。
+
+**根因**：电脑上有两个 Python——Anaconda 自带的 3.12 和独立安装的 3.11。`pip install onnxruntime` 安装的是针对当前 Python 编译的版本，换一个 Python 运行就会 DLL 不兼容。
+
+**教训**：
+- Python 环境不是"全局的"，每个 venv 绑定一个特定的 Python 解释器
+- 同一台电脑装多个 Python 时，务必确认 venv 用的是哪一个
+- 验证方法：`venv/Scripts/python --version` 和 `venv/Scripts/python -c "import sys; print(sys.executable)"`
+
+**给 Agent 的指令技巧**：
+- 不要说"报错了"，贴完整的错误信息（截图或复制文本）
+- 错误信息中的关键行（如 `ImportError: DLL load failed`）比上下文更重要
+
+### 坑 2：第三方库的"首次运行下载"陷阱
+
+**现象**：ChromaDB 代码能跑，但语义检索结果和 SQLite LIKE 一样——因为模型没下载。
+
+**根因**：ChromaDB 使用 ONNX 嵌入模型生成向量，这个模型（79MB）不在 pip 包里，首次运行时才从 S3 下载。在国内，S3 下载极慢，用户很容易以为"卡死了"而中断。
+
+**教训**：
+- 很多 AI/ML 库有"首次运行下载"行为（ChromaDB、Transformers、sentence-transformers 都有）
+- 遇到下载慢，先排除 VPN 问题，再考虑镜像源
+- HuggingFace 国内镜像 `hf-mirror.com` 是可靠的备选
+
+**给 Agent 的指令技巧**：
+- 不要说"下不下来"，告诉 Agent 当前速度和已等待时间
+- 可以主动提出"能不能手动下载放到对应目录"——这往往是最快的解法
+
+### 坑 3：环境重建后"之前能跑的不能跑了"
+
+**现象**：重建 venv 后，`save_memory` 报 `no such table`。
+
+**根因**：新 venv 没有自动初始化数据库（表不存在）。但正常启动 uvicorn 后，`app.main` 的 lifespan 会自动调用 `init_db()`。
+
+**教训**：
+- 重建环境 ≠ 只装依赖，数据库、缓存等持久化状态也需要确认
+- 框架的启动钩子（如 FastAPI lifespan）往往承担初始化职责，别手动重复
+
+## 四、验证阶段的协同方法论
+
+### 4.1 如何向 Agent 描述"我想验证什么"
+
+| 好的描述 | 不好的描述 |
+|----------|-----------|
+| "怎么验证 ChromaDB 和之前 SQLite 的区别" | "测试一下" |
+| "我想看到具体的数据对比" | "看看对不对" |
+| "输入 price 能不能找到每日预算" | "语义检索能用吗" |
+
+**核心原则**：告诉 Agent 你想看到什么**具体结果**，而不是问它"对不对"。
+
+### 4.2 验证时 Agent 应该提供什么
+
+一个好的验证方案应该包含：
+
+1. **明确的输入**：用户应该输入什么（精确到每个字符）
+2. **明确的预期**：正确的输出长什么样（不能只说"成功"）
+3. **判断标准**：怎么区分"通过"和"失败"
+4. **对比基线**：和什么比（新旧行为对比最有说服力）
+
+### 4.3 本次会话中有效的协同模式
+
+```
+用户：怎么验证区别？
+Agent：写对比测试脚本 → 运行 → 展示结果
+用户：（看到结果后）提交 git，详细说明问题和解决方案
+Agent：写详细 commit message → 提交
+用户：整理会话记录，给小白学习
+Agent：写文档
+```
+
+**模式**：`提出精确问题 → Agent 执行 → 用户确认 → 记录沉淀`
+
+这比上次的"继续下一阶段"更高效，因为每一步的目标都是明确的。
+
+## 五、给初学者的环境问题排查清单
+
+遇到"代码没错但跑不起来"时，按以下顺序排查：
+
+```
+1. Python 版本对不对？
+   → venv/Scripts/python --version
+   → venv/Scripts/python -c "import sys; print(sys.executable)"
+
+2. 依赖装全了没？
+   → pip list | grep <包名>
+   → pip install -r requirements.txt
+
+3. 数据库/缓存初始化了没？
+   → 检查 data/ 目录下有没有 .db 文件
+   → 检查 ~/.cache/chroma/ 下有没有模型文件
+
+4. 第三方服务连得上没？
+   → DeepSeek API：curl 测试
+   → ChromaDB 模型：首次运行会自动下载，看日志有没有报错
+
+5. 端口被占用没？
+   → netstat -ano | grep 8000
+```
+
+## 六、本次会话的指令风格评估
+
+| 做得好 | 可改进 |
+|--------|--------|
+| "怎么验证区别" — 精确的验证目标 | 一开始没有明确说"我想看数据对比"，Agent 需要追问 |
+| "提交 git，详细说明问题和解决方案" — 明确的交付要求 | — |
+| "整理会话记录给小白学习" — 明确的受众和目的 | — |
+| 遇到问题时提供了完整的错误信息（截图/文本） | — |
+
+> **一句话记住**：写完代码只是完成了一半，让代码在真实环境跑通才是另一半——而后者往往花更多时间。
