@@ -7,4 +7,3 @@ pydantic-settings
 sqlalchemy
 redis
 reportlab
-# chromadb  # 待网络通畅时启用，用于语义向量检索
