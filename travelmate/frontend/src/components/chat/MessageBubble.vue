@@ -46,20 +46,20 @@ function toggleSpeak() {
   >
     <div
       v-if="isSystem"
-      class="mx-auto max-w-[80%] rounded-full bg-gray-200 px-4 py-1.5 text-center text-xs text-gray-500"
+      class="mx-auto max-w-[85%] rounded-full bg-gray-200 px-3 py-1.5 text-center text-xs text-gray-500 sm:max-w-[80%] sm:px-4"
     >
       {{ message.content }}
     </div>
     <div
       v-else-if="isProactive"
-      class="max-w-[75%] rounded-2xl rounded-bl-md border border-amber-100 bg-amber-50 px-4 py-3 text-sm leading-relaxed text-gray-800 shadow-sm"
+      class="max-w-[90%] rounded-2xl rounded-bl-md border border-amber-100 bg-amber-50 px-3 py-2.5 text-sm leading-relaxed text-gray-800 shadow-sm sm:max-w-[75%] sm:px-4 sm:py-3"
     >
       <div class="mb-1 text-xs font-medium text-amber-600">{{ proactiveLabel }}</div>
       <div class="prose prose-sm max-w-none prose-p:my-1 prose-ul:my-1 prose-li:my-0" v-html="renderedContent" />
     </div>
     <div
       v-else
-      class="max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-relaxed"
+      class="max-w-[90%] rounded-2xl px-3 py-2.5 text-sm leading-relaxed sm:max-w-[75%] sm:px-4 sm:py-3"
       :class="
         isUser
           ? 'bg-blue-600 text-white rounded-br-md'

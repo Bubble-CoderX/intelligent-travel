@@ -30,12 +30,12 @@ function isTripCard(msg: { type: string }) {
 
 <template>
   <div class="flex h-screen flex-col bg-gray-50">
-    <header class="flex items-center border-b bg-white px-6 py-4 shadow-sm">
-      <h1 class="text-lg font-semibold text-gray-800">TravelMate</h1>
-      <span class="ml-2 text-sm text-gray-400">AI 智游伴</span>
+    <header class="flex items-center border-b bg-white px-4 py-3 shadow-sm sm:px-6 sm:py-4">
+      <h1 class="text-base font-semibold text-gray-800 sm:text-lg">TravelMate</h1>
+      <span class="ml-2 text-xs text-gray-400 sm:text-sm">AI 智游伴</span>
     </header>
 
-    <div ref="listRef" class="flex-1 space-y-4 overflow-y-auto px-4 py-6">
+    <div ref="listRef" class="flex-1 space-y-3 overflow-y-auto px-3 py-4 sm:space-y-4 sm:px-4 sm:py-6">
       <div v-if="store.messages.length === 0" class="flex h-full items-center justify-center">
         <p class="text-gray-400">你好！我是 TravelMate，告诉我你想去哪里旅行吧 ✈</p>
       </div>

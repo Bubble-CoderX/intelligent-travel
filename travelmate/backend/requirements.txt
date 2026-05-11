@@ -9,3 +9,6 @@ redis
 reportlab
 chromadb
 apscheduler
+pytest
+pytest-asyncio
+httpx

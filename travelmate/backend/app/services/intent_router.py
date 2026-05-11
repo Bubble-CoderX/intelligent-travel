@@ -142,13 +142,22 @@ async def route_intent(user_message: str, device_id: str) -> dict:
             reply = "请问你想去哪里旅行呢？告诉我目的地和天数，我来帮你规划～"
         elif not trip_days:
             reply = f"好的，你想去{destination}！请问计划玩几天呢？"
+            # WARN/URGENT 安全前缀
+            if safety.get("level") in ("WARN", "URGENT") and safety.get("warning"):
+                reply = f"请注意：{safety['warning']}\n\n{reply}"
         else:
-            try:
-                result = await generate_trip_plan(device_id, destination, int(trip_days))
-                reply = result["itinerary"]
-            except Exception as exc:
-                logger.warning("行程生成失败：%s", exc)
-                reply = f"生成{destination}行程时遇到了问题：{type(exc).__name__}。请稍后再试。"
+            # URGENT 场景：优先安全，暂不生成完整行程
+            if safety.get("level") == "URGENT":
+                reply = f"{safety.get('warning', '')}\n\n当前不适宜生成完整行程计划，请先确保安全情况。"
+            else:
+                try:
+                    result = await generate_trip_plan(device_id, destination, int(trip_days))
+                    reply = result["itinerary"]
+                    if safety.get("level") == "WARN" and safety.get("warning"):
+                        reply = f"> {safety['warning']}\n\n{reply}"
+                except Exception as exc:
+                    logger.warning("行程生成失败：%s", exc)
+                    reply = f"生成{destination}行程时遇到了问题：{type(exc).__name__}。请稍后再试。"
 
     # 阶段五：WEATHER 意图 → 调用天气服务
     elif intent == "WEATHER":
@@ -194,8 +203,8 @@ async def route_intent(user_message: str, device_id: str) -> dict:
                 reply = f"查询「{keyword}」时遇到了问题：{type(exc).__name__}。请稍后再试。"
 
     else:
-        # CHAT 意图：调用 LLM 生成真正的回复
-        chat_prompt = "你是「AI智游伴」，一个友好专业的旅行助手。请用简洁温暖的语言回复用户。"
+        # CHAT 意图：调用 LLM 生成真正的回复（精简 prompt 减少 token 消耗）
+        chat_prompt = "你是「AI智游伴」，友好专业的旅行助手。简洁温暖，1-3句话。"
         reply = await call_llm(
             messages=[{"role": "user", "content": user_message}],
             system_prompt=chat_prompt,
