@@ -8,6 +8,7 @@ from app.api.memory import router as memory_router
 from app.api.trip import router as trip_router
 from app.api.proactive import router as proactive_router
 from app.models.database import init_db
+from app.services.proactive_service import register_ws, unregister_ws, start_scheduler, shutdown_scheduler
 from app.services.rag_service import load_knowledge_base
 
 
@@ -15,7 +16,9 @@ from app.services.rag_service import load_knowledge_base
 async def lifespan(app: FastAPI):
     init_db()
     load_knowledge_base()
+    start_scheduler()
     yield
+    shutdown_scheduler()
 
 
 app = FastAPI(title="TravelMate API", version="0.1.0", lifespan=lifespan)
@@ -42,9 +45,13 @@ async def health():
 @app.websocket("/ws/{device_id}")
 async def websocket_endpoint(websocket: WebSocket, device_id: str):
     await websocket.accept()
+    register_ws(device_id, websocket)
     try:
         while True:
             data = await websocket.receive_text()
-            await websocket.send_text(f"Echo: {data}")
+            if data == "ping":
+                await websocket.send_text('{"type":"pong"}')
     except WebSocketDisconnect:
         pass
+    finally:
+        unregister_ws(device_id)
