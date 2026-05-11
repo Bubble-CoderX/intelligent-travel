@@ -3,6 +3,7 @@ import logging
 from fastapi import APIRouter
 
 from app.models.schemas import ChatRequest, ChatResponse
+from app.services.context_service import save_message
 from app.services.intent_router import route_intent
 from app.utils.safety import check_rate_limit
 
@@ -20,6 +21,8 @@ async def chat_endpoint(req: ChatRequest):
             message_type="text",
         )
 
+    session_id = req.session_id or "default"
+
     try:
         result = await route_intent(req.message, req.device_id)
     except Exception as exc:
@@ -31,6 +34,8 @@ async def chat_endpoint(req: ChatRequest):
         )
 
     if result.get("intent") == "blocked":
+        save_message(req.device_id, session_id, "user", req.message, "blocked")
+        save_message(req.device_id, session_id, "assistant", result.get("reply", ""), "blocked")
         return ChatResponse(
             reply=result.get("reply", "抱歉，无法处理该请求。"),
             intent="blocked",
@@ -68,6 +73,9 @@ async def chat_endpoint(req: ChatRequest):
         metadata["destination"] = extracted.get("destination", "")
         metadata["days"] = extracted.get("days", 0)
         metadata["budget"] = extracted.get("budget", 0)
+
+    save_message(req.device_id, session_id, "user", req.message, intent)
+    save_message(req.device_id, session_id, "assistant", reply, intent)
 
     return ChatResponse(
         reply=reply,

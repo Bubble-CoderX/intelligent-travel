@@ -3,8 +3,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 
 from app.models.database import get_db
+from app.services.context_service import get_recent_history
 from app.services.llm_client import call_llm
 from app.services.map_service import search_places
 from app.services.memory_service import get_all_preferences, query_memory, save_memory
@@ -15,6 +17,10 @@ from app.services.weather_service import get_weather_forecast
 from app.utils.safety import input_safety_check, output_safety_check, filter_llm_output
 
 logger = logging.getLogger(__name__)
+
+# 特殊模式：自我介绍 / 回忆问题 → 直接走 CHAT，绕过 AI 意图识别
+_INTRO_RE = re.compile(r"我(叫|是|的名字)")
+_RECALL_RE = re.compile(r"(你还?记得|之前.*说过|刚才.*说过|上回.*说过)")
 
 INTENT_RECOGNITION_PROMPT = """你是「AI智游伴」的意图识别引擎。
 
@@ -90,49 +96,70 @@ async def route_intent(user_message: str, device_id: str) -> dict:
         intent, reply = regex_result
         return {"intent": intent, "reply": reply, "layer": "regex", "safety": safety}
 
-    # 2. 第二层：AI 意图识别
-    intent_prompt = INTENT_RECOGNITION_PROMPT.replace(
-        "{user_message}", user_message
-    ).replace(
-        "{user_preferences}", _get_user_preferences(device_id)
-    )
-    raw_response = await call_llm(
-        messages=[{"role": "user", "content": user_message}],
-        system_prompt=intent_prompt,
-        temperature=0.1,
-        max_tokens=500,
-    )
-
-    # 解析 AI 返回的 JSON
-    try:
-        intent_data = json.loads(raw_response)
-    except json.JSONDecodeError:
-        logger.warning("AI 意图识别返回非 JSON：%.200s", raw_response)
+    # 2. 特殊模式拦截：自我介绍 / 回忆问题 → 直接走 CHAT，不调 AI
+    personal_keys = {"名字", "姓名", "年龄", "家乡", "职业", "性别", "爱好", "工作", "称呼", "身份"}
+    intro_match = _INTRO_RE.search(user_message)
+    recall_match = _RECALL_RE.search(user_message)
+    if intro_match or recall_match:
         intent_data = {
             "intent": "CHAT",
             "sub_intent": "chat_general",
-            "confidence": 0.5,
-            "reasoning": "LLM 返回格式异常，降级为闲聊",
+            "confidence": 1.0,
+            "reasoning": "自我介绍/回忆类问题，直接走闲聊",
             "extracted_data": {},
         }
+        raw_response = ""
+        intent = "CHAT"
+        reasoning = intent_data["reasoning"]
+        extracted = {}
+    else:
+        # 3. 第二层：AI 意图识别
+        intent_prompt = INTENT_RECOGNITION_PROMPT.replace(
+            "{user_message}", user_message
+        ).replace(
+            "{user_preferences}", _get_user_preferences(device_id)
+        )
+        raw_response = await call_llm(
+            messages=[{"role": "user", "content": user_message}],
+            system_prompt=intent_prompt,
+            temperature=0.1,
+            max_tokens=500,
+        )
 
-    # 3. 输出安全检查
-    output_safety = output_safety_check(raw_response)
+        # 解析 AI 返回的 JSON
+        try:
+            intent_data = json.loads(raw_response)
+        except json.JSONDecodeError:
+            logger.warning("AI 意图识别返回非 JSON：%.200s", raw_response)
+            intent_data = {
+                "intent": "CHAT",
+                "sub_intent": "chat_general",
+                "confidence": 0.5,
+                "reasoning": "LLM 返回格式异常，降级为闲聊",
+                "extracted_data": {},
+            }
 
-    intent = intent_data.get("intent", "CHAT")
-    reasoning = intent_data.get("reasoning", "")
-    extracted = intent_data.get("extracted_data", {})
+        # 4. 输出安全检查
+        output_safety = output_safety_check(raw_response)
+
+        intent = intent_data.get("intent", "CHAT")
+        reasoning = intent_data.get("reasoning", "")
+        extracted = intent_data.get("extracted_data", {})
+
+        # 个人信息不存为偏好，提前改回 CHAT
+        if intent == "PREFERENCE" and extracted.get("key") in personal_keys:
+            intent = "CHAT"
 
     # 阶段四：PREFERENCE 意图自动写入记忆系统
-    if intent == "PREFERENCE" and extracted.get("key"):
+    if intent == "PREFERENCE" and extracted.get("key") and extracted.get("key") not in personal_keys:
         cat = extracted.get("category", "通用")
         key = extracted.get("key", "")
         val = extracted.get("value", "")
         saved = save_memory(device_id, cat, key, val)
         if saved:
-            reply = f"已记住你的偏好：{key} - {val}。之后的推荐会参考这个偏好哦～"
+            reply = f"好的，已记住你的偏好：{val}。之后的推荐会参考它～"
         else:
-            reply = f"已识别你的偏好：{key} - {val}，但保存时遇到了问题。"
+            reply = f"收到你的偏好：{key} - {val}，但保存时遇到了问题。"
 
     # 阶段六：TRIP_PLAN 意图 → 调用行程生成服务
     elif intent == "TRIP_PLAN":
@@ -193,6 +220,19 @@ async def route_intent(user_message: str, device_id: str) -> dict:
         spot = extracted.get("spot_name", "")
         city = extracted.get("city", "")
         keyword = spot or city
+        # 无关键词时从对话历史中补全（代词消解）
+        if not keyword:
+            history = await get_recent_history(device_id)
+            from app.services.llm_client import call_llm as _llm
+            resolve_prompt = "从以下对话历史中提取最近提到的景点或城市名称，只返回名称，没有则返回\"无\"。"
+            hist_text = "\n".join(f"{m['role']}: {m['content']}" for m in history) if history else "（无历史）"
+            resolved = await _llm(
+                messages=[{"role": "user", "content": f"历史：{hist_text}\n当前：{user_message}"}],
+                system_prompt=resolve_prompt,
+                temperature=0.0,
+                max_tokens=50,
+            )
+            keyword = resolved.strip() if resolved.strip() != "无" else ""
         if not keyword:
             reply = "请问你想了解哪个景点或城市的信息呢？"
         else:
@@ -203,10 +243,16 @@ async def route_intent(user_message: str, device_id: str) -> dict:
                 reply = f"查询「{keyword}」时遇到了问题：{type(exc).__name__}。请稍后再试。"
 
     else:
-        # CHAT 意图：调用 LLM 生成真正的回复（精简 prompt 减少 token 消耗）
-        chat_prompt = "你是「AI智游伴」，友好专业的旅行助手。简洁温暖，1-3句话。"
+        # CHAT 意图：调用 LLM 生成真正的回复
+        chat_prompt = (
+            "你是「AI智游伴」，友好专业的旅行助手。简洁温暖，1-3句话。"
+            "前面的消息是你们的对话历史，你必须基于历史回答。如果用户问是否记得某信息，先检查历史中有没有提到。"
+        )
+        history = await get_recent_history(device_id)
+        messages = [{"role": m["role"], "content": m["content"]} for m in history]
+        messages.append({"role": "user", "content": user_message})
         reply = await call_llm(
-            messages=[{"role": "user", "content": user_message}],
+            messages=messages,
             system_prompt=chat_prompt,
             temperature=0.7,
             max_tokens=300,
