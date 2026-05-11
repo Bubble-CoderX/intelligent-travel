@@ -5,6 +5,7 @@ import logging
 
 from app.models.database import get_db
 from app.services.llm_client import call_llm
+from app.services.memory_service import get_all_preferences, query_memory, save_memory
 from app.services.regex_matcher import regex_match
 from app.utils.safety import input_safety_check, output_safety_check
 
@@ -57,19 +58,11 @@ INTENT_RECOGNITION_PROMPT = """你是「AI智游伴」的意图识别引擎。
 
 
 def _get_user_preferences(device_id: str) -> str:
-    """从数据库读取用户偏好，拼成文本供 LLM 参考。"""
-    try:
-        conn = get_db()
-        rows = conn.execute(
-            "SELECT category, key, value FROM user_preferences WHERE device_id = ?",
-            (device_id,),
-        ).fetchall()
-        conn.close()
-        if not rows:
-            return "（暂无历史偏好）"
-        return "\n".join(f"- {r['category']}/{r['key']}: {r['value']}" for r in rows)
-    except Exception:
+    """从记忆服务读取用户偏好，拼成文本供 LLM 参考。"""
+    prefs = get_all_preferences(device_id)
+    if not prefs:
         return "（暂无历史偏好）"
+    return "\n".join(f"- {p['category']}/{p['key']}: {p['value']}" for p in prefs)
 
 
 async def route_intent(user_message: str, device_id: str) -> dict:
@@ -125,8 +118,18 @@ async def route_intent(user_message: str, device_id: str) -> dict:
     reasoning = intent_data.get("reasoning", "")
     extracted = intent_data.get("extracted_data", {})
 
-    # 阶段三：AI 层仅做意图识别，回复由后续阶段接入实际服务后生成
-    reply = f"已识别你的意图：{intent}。{reasoning}"
+    # 阶段四：PREFERENCE 意图自动写入记忆系统
+    if intent == "PREFERENCE" and extracted.get("key"):
+        cat = extracted.get("category", "通用")
+        key = extracted.get("key", "")
+        val = extracted.get("value", "")
+        saved = save_memory(device_id, cat, key, val)
+        if saved:
+            reply = f"已记住你的偏好：{key} - {val}。之后的推荐会参考这个偏好哦～"
+        else:
+            reply = f"已识别你的偏好：{key} - {val}，但保存时遇到了问题。"
+    else:
+        reply = f"已识别你的意图：{intent}。{reasoning}"
 
     return {
         "intent": intent,
