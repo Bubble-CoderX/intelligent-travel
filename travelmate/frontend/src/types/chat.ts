@@ -5,4 +5,6 @@ export interface Message {
   timestamp: number
   type: 'text' | 'card' | 'proactive'
   metadata?: Record<string, unknown>
+  failed?: boolean
+  errorType?: 'network' | 'server' | 'timeout'
 }

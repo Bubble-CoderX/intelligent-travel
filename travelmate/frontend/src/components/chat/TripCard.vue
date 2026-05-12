@@ -76,6 +76,19 @@ interface TripPlan {
 // ── State ────────────────────────────────────────────
 const activeTab = ref<string>('overview')
 const bottomPanel = ref<'transport' | 'food' | 'accommodation' | null>(null)
+const showExportMenu = ref(false)
+
+function exportJSON() {
+  if (!props.tripPlan?.trip_id) return
+  const blob = new Blob([JSON.stringify(props.tripPlan, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${props.tripPlan.trip_id}.json`
+  a.click()
+  URL.revokeObjectURL(url)
+  showExportMenu.value = false
+}
 
 // ── Computed ─────────────────────────────────────────
 const tabKeys = computed(() => {
@@ -150,7 +163,7 @@ const mealEmoji = (type: string) => {
   </div>
 
   <!-- 结构化 TripCard -->
-  <div v-else-if="tripPlan" class="my-2 overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-sm">
+  <div v-else-if="tripPlan" class="my-2 overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-sm" @click="showExportMenu = false">
     <!-- Header -->
     <div class="bg-gradient-to-r from-amber-500 to-orange-400 px-5 py-4">
       <div class="flex items-center justify-between">
@@ -158,9 +171,38 @@ const mealEmoji = (type: string) => {
           <h3 class="text-lg font-bold text-white">{{ tripPlan.destination }} · {{ tripPlan.days?.length ?? 0 }} 日游</h3>
           <p class="mt-1 text-sm text-amber-50">{{ tripPlan.summary }}</p>
         </div>
-        <span class="rounded-full bg-white/20 px-3 py-1 text-xs font-medium text-white">
-          {{ tripPlan.days?.length ?? 0 }} 天
-        </span>
+        <div class="flex items-center gap-2">
+          <span class="rounded-full bg-white/20 px-3 py-1 text-xs font-medium text-white">
+            {{ tripPlan.days?.length ?? 0 }} 天
+          </span>
+          <div v-if="tripPlan.trip_id" class="relative">
+            <button
+              class="rounded-lg bg-white/20 p-1.5 text-white transition-colors hover:bg-white/30"
+              @click.stop="showExportMenu = !showExportMenu"
+            >
+              <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+            </button>
+            <div
+              v-if="showExportMenu"
+              class="absolute right-0 top-full z-20 mt-1 min-w-[120px] rounded-lg border border-stone-200 bg-white py-1 shadow-lg"
+            >
+              <a
+                :href="`http://localhost:8000/trip/${tripPlan.trip_id}/export?format=pdf`"
+                target="_blank"
+                class="flex items-center gap-2 px-3 py-1.5 text-sm text-stone-700 hover:bg-stone-50"
+                @click="showExportMenu = false"
+              >
+                📄 导出 PDF
+              </a>
+              <button
+                class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-stone-700 hover:bg-stone-50"
+                @click="exportJSON"
+              >
+                📋 导出 JSON
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
       <div v-if="safetyWarning" class="mt-3 rounded-lg bg-red-50/90 px-3 py-2 text-xs font-medium text-red-700">
         ⚠️ {{ safetyWarning }}
