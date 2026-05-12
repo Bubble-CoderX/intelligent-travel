@@ -7,6 +7,8 @@ from app.services.context_service import save_message
 from app.services.intent_router import route_intent
 from app.utils.safety import check_rate_limit
 
+from app.api.sessions import _generate_title, update_session_title
+
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["chat"])
 
@@ -74,7 +76,7 @@ async def chat_endpoint(req: ChatRequest):
         if trip_plan:
             metadata["trip_plan"] = trip_plan
             metadata["destination"] = trip_plan.get("destination", "")
-            metadata["days"] = trip_plan.get("days", 0)
+            metadata["days"] = len(trip_plan.get("days", []))
         else:
             metadata["destination"] = extracted.get("destination", "")
             metadata["days"] = extracted.get("days", 0)
@@ -82,6 +84,31 @@ async def chat_endpoint(req: ChatRequest):
 
     save_message(req.device_id, session_id, "user", req.message, intent)
     save_message(req.device_id, session_id, "assistant", reply, intent, metadata=metadata)
+
+    # ── 会话自动命名 ──────────────────────────────────────
+    from app.models.database import get_db as _get_db
+    _conn = _get_db()
+    _session = _conn.execute(
+        "SELECT title FROM sessions WHERE session_id = ? AND device_id = ?",
+        (session_id, req.device_id),
+    ).fetchone()
+    _conn.close()
+
+    if _session:
+        current_title = _session["title"] or ""
+        # 行程规划生成了结构化方案 → 以目的地命名
+        if intent == "TRIP_PLAN" and metadata.get("trip_plan"):
+            dest = metadata.get("destination", "")
+            days = metadata.get("days", 0)
+            if dest:
+                new_title = f"{dest}·{days}日游" if days else dest
+                if new_title != current_title:
+                    update_session_title(req.device_id, session_id, new_title)
+        # 首条消息且仍是默认标题 → 用消息内容命名
+        elif current_title in ("新会话", ""):
+            new_title = _generate_title(req.device_id, session_id)
+            if new_title != "新会话":
+                update_session_title(req.device_id, session_id, new_title)
 
     return ChatResponse(
         reply=reply,

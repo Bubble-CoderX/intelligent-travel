@@ -20,7 +20,7 @@ class RenameSessionRequest(BaseModel):
 
 
 def _generate_title(device_id: str, session_id: str) -> str:
-    """从该会话的第一条用户消息自动截取标题。"""
+    """从该会话的第一条用户消息截取标题（用于初始化时的占位）。"""
     conn = get_db()
     row = conn.execute(
         "SELECT content FROM conversations "
@@ -31,8 +31,20 @@ def _generate_title(device_id: str, session_id: str) -> str:
     conn.close()
     if row and row["content"]:
         text = row["content"].strip()
-        return text[:20] + ("..." if len(text) > 20 else "")
+        return text[:15] + ("..." if len(text) > 15 else "")
     return "新会话"
+
+
+def update_session_title(device_id: str, session_id: str, title: str) -> None:
+    """更新会话标题（供 chat 端点调用）。"""
+    conn = get_db()
+    conn.execute(
+        "UPDATE sessions SET title = ?, updated_at = CURRENT_TIMESTAMP "
+        "WHERE session_id = ? AND device_id = ?",
+        (title, session_id, device_id),
+    )
+    conn.commit()
+    conn.close()
 
 
 @router.get("")

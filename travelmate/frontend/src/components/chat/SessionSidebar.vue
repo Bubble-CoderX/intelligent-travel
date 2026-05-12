@@ -40,17 +40,10 @@ function handleRenameKeydown(e: KeyboardEvent, sessionId: string) {
 
 function formatTime(ts: string) {
   if (!ts) return ''
-  const d = new Date(ts)
-  const now = new Date()
-  const diffMs = now.getTime() - d.getTime()
-  const diffMin = Math.floor(diffMs / 60000)
-  if (diffMin < 1) return '刚刚'
-  if (diffMin < 60) return `${diffMin}分钟前`
-  const diffH = Math.floor(diffMin / 60)
-  if (diffH < 24) return `${diffH}小时前`
-  const diffD = Math.floor(diffH / 24)
-  if (diffD < 7) return `${diffD}天前`
-  return d.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
+  const d = new Date(ts.replace(' ', 'T') + (ts.includes('Z') || ts.includes('+') ? '' : 'Z'))
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mm = String(d.getMinutes()).padStart(2, '0')
+  return `${hh}:${mm}`
 }
 </script>
 
@@ -118,9 +111,8 @@ function formatTime(ts: string) {
             {{ s.title || '新会话' }}
           </div>
 
-          <div class="mt-0.5 flex items-center gap-1 text-[11px] text-stone-400 dark:text-stone-500">
-            <span>{{ s.message_count }} 条</span>
-            <span v-if="s.updated_at">· {{ formatTime(s.updated_at) }}</span>
+          <div class="mt-0.5 text-[11px] text-stone-400 dark:text-stone-500">
+            <span v-if="s.created_at">{{ formatTime(s.created_at) }}</span>
           </div>
         </div>
 
