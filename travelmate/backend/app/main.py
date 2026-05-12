@@ -1,7 +1,11 @@
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+
+# 后端启动时间戳，前端据此判断是否需要重置暗色模式
+_STARTUP_TS = int(time.time())
 
 from app.api.chat import router as chat_router
 from app.api.memory import router as memory_router
@@ -46,6 +50,11 @@ app.include_router(knowledge_router)
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.get("/startup-ts")
+async def startup_ts():
+    return {"startup_ts": _STARTUP_TS}
 
 
 @app.websocket("/ws/{device_id}")

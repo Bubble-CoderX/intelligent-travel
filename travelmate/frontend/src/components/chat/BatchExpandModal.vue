@@ -6,8 +6,11 @@ const emit = defineEmits<{ close: [] }>()
 
 const inputText = ref('')
 const isRunning = ref(false)
+const fetchError = ref('')
 const progress = ref<{ spot: string; index: number; total: number; status: string; chunks?: number; cached?: boolean; error?: string }[]>([])
 const completeResult = ref<{ total: number; success: number; failed: number } | null>(null)
+
+const API_BASE = 'http://localhost:8000'
 
 const PRESET_SPOTS = [
   '北京故宫', '上海外滩', '桂林山水', '黄山', '九寨沟',
@@ -31,18 +34,24 @@ async function startBatchExpand() {
   if (spots.length === 0 || isRunning.value) return
 
   isRunning.value = true
+  fetchError.value = ''
   progress.value = []
   completeResult.value = null
 
   try {
-    const res = await fetch('/api/knowledge/auto-expand-batch', {
+    const res = await fetch(`${API_BASE}/knowledge/auto-expand-batch`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-Device-Id': getDeviceId(),
+        'X-Device-ID': getDeviceId(),
       },
       body: JSON.stringify({ spot_names: spots }),
     })
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => res.statusText)
+      throw new Error(`服务器返回 ${res.status}: ${errText}`)
+    }
 
     const reader = res.body?.getReader()
     if (!reader) throw new Error('无法读取响应流')
@@ -84,7 +93,8 @@ async function startBatchExpand() {
       }
     }
   } catch (err: any) {
-    progress.value.push({ spot: '错误', index: 0, total: 0, status: 'error', error: err.message })
+    fetchError.value = err.message || '连接失败，请检查后端是否启动'
+    progress.value.push({ spot: '连接失败', index: 0, total: 0, status: 'error', error: err.message })
   } finally {
     isRunning.value = false
   }
@@ -115,7 +125,7 @@ function statusIcon(s: string) {
 
         <!-- Body -->
         <div class="px-5 py-4">
-          <!-- 输入区（未运行时显示） -->
+          <!-- 输入区（未运行且未完成时显示） -->
           <div v-if="!isRunning && !completeResult">
             <textarea
               v-model="inputText"
@@ -136,6 +146,11 @@ function statusIcon(s: string) {
 
           <!-- 进度区（运行中/完成时显示） -->
           <div v-else class="max-h-72 overflow-y-auto">
+            <!-- 连接错误横幅 -->
+            <div v-if="fetchError" class="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600 dark:border-red-800 dark:bg-red-950 dark:text-red-400">
+              {{ fetchError }}
+            </div>
+
             <div
               v-for="(p, i) in progress"
               :key="i"
@@ -169,7 +184,7 @@ function statusIcon(s: string) {
           <button
             v-if="!isRunning"
             class="rounded-lg border border-stone-200 px-4 py-2 text-sm text-stone-600 hover:bg-stone-50 dark:border-stone-600 dark:text-stone-300 dark:hover:bg-stone-700"
-            @click="completeResult ? emit('close') : emit('close')"
+            @click="emit('close')"
           >
             {{ completeResult ? '关闭' : '取消' }}
           </button>
