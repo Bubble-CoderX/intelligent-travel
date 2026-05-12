@@ -110,3 +110,137 @@ async def auto_expand(spot_name: str) -> dict:
         "chunk_count": chunk_count,
         "content_length": len(content),
     }
+
+
+# ── 用户反馈纠正闭环 ──────────────────────────────────
+
+CORRECTION_EXTRACT_PROMPT = """你是信息纠正提取器。用户指出了一条关于景点的错误信息。
+
+## 用户的纠正消息
+{correction_message}
+
+## 请提取以下信息（严格 JSON）
+{{
+  "spot_name": "被纠正的景点名称（从消息或上下文中推断）",
+  "original_fact": "用户指出的错误信息（简短描述错误的部分）",
+  "corrected_fact": "用户给出的正确信息（原样保留用户说法）"
+}}
+
+## 规则
+- spot_name 必须是中文景点名（2字以上）
+- 如果用户没有明确说景点名，从上下文推断最可能的景点
+- 如果无法判断景点或纠正内容不明确，返回 {{"error": "无法判断"}}
+- 只输出 JSON，不要输出其他内容
+"""
+
+CORRECTION_APPLY_PROMPT = """你是知识库编辑。请根据纠正信息，修改下面的景点知识文档。
+
+## 纠正信息
+景点：{spot_name}
+错误内容：{original_fact}
+正确内容：{corrected_fact}
+
+## 当前文档内容
+{document_content}
+
+## 要求
+1. 找到文档中包含错误信息的段落
+2. 只修改错误的部分，保持其他内容不变
+3. 保持 Markdown 格式不变
+4. 输出修改后的完整文档
+5. 直接输出文档内容，不要加解释
+"""
+
+
+def _find_spot_file(spot_name: str) -> Path | None:
+    """查找景点对应的 .md 文件（支持模糊匹配）。"""
+    safe_name = re.sub(r'[\\/:*?"<>|]', '_', spot_name)
+    exact = KNOWLEDGE_DIR / f"{safe_name}.md"
+    if exact.exists():
+        return exact
+    # 模糊匹配：文件名包含关键词
+    for f in KNOWLEDGE_DIR.glob("*.md"):
+        if safe_name in f.stem or f.stem in safe_name:
+            return f
+    return None
+
+
+async def correct_knowledge(correction_message: str) -> dict:
+    """用户反馈纠正闭环：提取纠正信息 → 定位文件 → 修改 → 重新向量化。
+
+    返回 {"status": "ok", "spot_name": "...", "applied": True/False}
+    """
+    logger.info("开始纠正流程：%s", correction_message)
+
+    # 1. 用 LLM 提取纠正信息
+    extract_prompt = CORRECTION_EXTRACT_PROMPT.format(correction_message=correction_message)
+    raw = await call_llm(
+        messages=[{"role": "user", "content": correction_message}],
+        system_prompt=extract_prompt,
+        temperature=0.0,
+        max_tokens=300,
+    )
+
+    import json
+    try:
+        info = json.loads(raw)
+    except json.JSONDecodeError:
+        # 尝试提取 JSON 片段
+        match = re.search(r'\{.*\}', raw, re.DOTALL)
+        if match:
+            try:
+                info = json.loads(match.group())
+            except json.JSONDecodeError:
+                return {"status": "parse_failed", "message": "无法解析纠正信息"}
+        else:
+            return {"status": "parse_failed", "message": "无法解析纠正信息"}
+
+    if "error" in info:
+        return {"status": "skipped", "message": info["error"]}
+
+    spot_name = info.get("spot_name", "")
+    original_fact = info.get("original_fact", "")
+    corrected_fact = info.get("corrected_fact", "")
+
+    if not spot_name or not corrected_fact:
+        return {"status": "skipped", "message": "纠正信息不完整"}
+
+    # 2. 查找对应的知识文件
+    file_path = _find_spot_file(spot_name)
+    if not file_path:
+        return {"status": "no_file", "message": f"未找到「{spot_name}」的知识文件"}
+
+    # 3. 读取当前文档内容
+    current_content = file_path.read_text(encoding="utf-8")
+
+    # 4. 用 LLM 修改文档中的错误
+    apply_prompt = CORRECTION_APPLY_PROMPT.format(
+        spot_name=spot_name,
+        original_fact=original_fact,
+        corrected_fact=corrected_fact,
+        document_content=current_content,
+    )
+    updated_content = await call_llm(
+        messages=[{"role": "user", "content": f"请根据纠正信息修改文档"}],
+        system_prompt=apply_prompt,
+        temperature=0.1,
+        max_tokens=2000,
+    )
+
+    if not updated_content or len(updated_content.strip()) < 50:
+        return {"status": "apply_failed", "message": "LLM 修改结果异常"}
+
+    # 5. 保存修改后的文件
+    file_path.write_text(updated_content, encoding="utf-8")
+    logger.info("知识文件已更新：%s", file_path)
+
+    # 6. 重新向量化
+    chunk_count = _vectorize_single(spot_name, updated_content)
+
+    return {
+        "status": "ok",
+        "spot_name": spot_name,
+        "original_fact": original_fact,
+        "corrected_fact": corrected_fact,
+        "chunk_count": chunk_count,
+    }

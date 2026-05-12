@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue'
+import { ref, watch, computed, onMounted, onUnmounted } from 'vue'
 import { useSpeechRecognition } from '@/composables/useSpeechRecognition'
 import StyleSelector from './StyleSelector.vue'
 
@@ -9,6 +9,32 @@ defineProps<{ disabled?: boolean }>()
 const input = ref('')
 const tripStyle = ref<string | undefined>(undefined)
 const { isListening, transcript, errorMsg, isSupported, start, stop } = useSpeechRecognition()
+
+// ── 动态 placeholder 轮播 ────────────────────────────
+const PLACEHOLDERS = [
+  '告诉我你想去哪里旅行...',
+  '试试说"帮我规划一个周末短途旅行"',
+  '输入"杭州三天"马上生成行程',
+  '问"今天适合去哪里玩"获取推荐',
+  '想知道某个景点的故事？直接问我～',
+]
+const placeholderIdx = ref(0)
+let placeholderTimer: ReturnType<typeof setInterval> | null = null
+
+onMounted(() => {
+  placeholderTimer = setInterval(() => {
+    placeholderIdx.value = (placeholderIdx.value + 1) % PLACEHOLDERS.length
+  }, 5000)
+})
+
+onUnmounted(() => {
+  if (placeholderTimer) clearInterval(placeholderTimer)
+})
+
+const currentPlaceholder = computed(() => {
+  if (isListening.value) return '正在聆听...'
+  return PLACEHOLDERS[placeholderIdx.value]
+})
 
 watch(transcript, (val) => {
   if (val) input.value = val
@@ -64,14 +90,13 @@ function handleKeydown(e: KeyboardEvent) {
       v-model="input"
       :disabled="disabled"
       rows="1"
-      :placeholder="isListening ? '正在聆听...' : '告诉我你想去哪里旅行...'"
+      :placeholder="currentPlaceholder"
       class="flex-1 resize-none rounded-2xl border border-stone-200 bg-stone-50 px-4 py-2.5 text-sm text-stone-800 outline-none transition-all placeholder:text-stone-400 focus:border-amber-400 focus:bg-white focus:ring-2 focus:ring-amber-100 disabled:opacity-50 dark:border-stone-600 dark:bg-stone-700 dark:text-stone-100 dark:placeholder:text-stone-500 dark:focus:border-amber-500 dark:focus:bg-stone-700"
       :class="errorMsg ? 'border-red-300' : ''"
       :title="errorMsg"
       @keydown="handleKeydown"
     />
     <span v-if="errorMsg" class="absolute bottom-full left-3 mb-1 text-xs text-red-500 sm:left-4">{{ errorMsg }}</span>
-    <p v-if="!input.trim() && !isListening" class="hidden text-[11px] text-stone-400 sm:block dark:text-stone-500">试试说"帮我规划一个周末短途旅行"</p>
     <button
       v-if="isSupported"
       :disabled="disabled"

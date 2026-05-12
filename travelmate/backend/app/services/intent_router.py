@@ -22,6 +22,9 @@ logger = logging.getLogger(__name__)
 _INTRO_RE = re.compile(r"我(叫|是|的名字)")
 _RECALL_RE = re.compile(r"(你还?记得|之前.*说过|刚才.*说过|上回.*说过)")
 
+# 纠正模式：用户指出信息错误时触发知识库纠正
+_CORRECTION_RE = re.compile(r"(不对|错了|更正|纠正|应该是|其实是|说错了|搞错了|不是.*是)")
+
 INTENT_RECOGNITION_PROMPT = """你是「AI智游伴」的意图识别引擎。
 
 你的任务是分析用户输入，将其归类到以下意图类别之一，并提取关键参数。
@@ -245,20 +248,57 @@ async def route_intent(user_message: str, device_id: str, session_id: str | None
                 reply = f"查询「{keyword}」时遇到了问题：{type(exc).__name__}。请稍后再试。"
 
     else:
-        # CHAT 意图：调用 LLM 生成真正的回复
-        chat_prompt = (
-            "你是「AI智游伴」，友好专业的旅行助手。简洁温暖，1-3句话。"
-            "前面的消息是你们的对话历史，你必须基于历史回答。如果用户问是否记得某信息，先检查历史中有没有提到。"
-        )
-        history = await get_recent_history(device_id, session_id=session_id)
-        messages = [{"role": m["role"], "content": m["content"]} for m in history]
-        messages.append({"role": "user", "content": user_message})
-        reply = await call_llm(
-            messages=messages,
-            system_prompt=chat_prompt,
-            temperature=0.7,
-            max_tokens=300,
-        )
+        # ── CHAT 意图 ──
+
+        # 检测纠正意图：用户指出信息错误 → 触发知识库纠正闭环
+        if _CORRECTION_RE.search(user_message):
+            try:
+                from app.services.knowledge_expander import correct_knowledge
+                correction_result = await correct_knowledge(user_message)
+                if correction_result.get("status") == "ok":
+                    spot = correction_result.get("spot_name", "")
+                    reply = (
+                        f"感谢你的纠正！已更新「{spot}」的知识记录：\n"
+                        f"✅ {correction_result.get('corrected_fact', '')}\n"
+                        f"之后的问答会基于更准确的信息来回答～"
+                    )
+                else:
+                    # 纠正失败，正常走 LLM 回复
+                    reply = None
+            except Exception as exc:
+                logger.warning("知识纠正失败：%s", exc)
+                reply = None
+
+            # 如果纠正失败或未触发，走正常 LLM 回复
+            if reply is None:
+                chat_prompt = (
+                    "你是「AI智游伴」，友好专业的旅行助手。简洁温暖，1-3句话。"
+                    "前面的消息是你们的对话历史，你必须基于历史回答。如果用户问是否记得某信息，先检查历史中有没有提到。"
+                )
+                history = await get_recent_history(device_id, session_id=session_id)
+                messages = [{"role": m["role"], "content": m["content"]} for m in history]
+                messages.append({"role": "user", "content": user_message})
+                reply = await call_llm(
+                    messages=messages,
+                    system_prompt=chat_prompt,
+                    temperature=0.7,
+                    max_tokens=300,
+                )
+        else:
+            # 正常 CHAT 回复
+            chat_prompt = (
+                "你是「AI智游伴」，友好专业的旅行助手。简洁温暖，1-3句话。"
+                "前面的消息是你们的对话历史，你必须基于历史回答。如果用户问是否记得某信息，先检查历史中有没有提到。"
+            )
+            history = await get_recent_history(device_id, session_id=session_id)
+            messages = [{"role": m["role"], "content": m["content"]} for m in history]
+            messages.append({"role": "user", "content": user_message})
+            reply = await call_llm(
+                messages=messages,
+                system_prompt=chat_prompt,
+                temperature=0.7,
+                max_tokens=300,
+            )
 
     # 输出安全过滤
     reply = await filter_llm_output(reply)

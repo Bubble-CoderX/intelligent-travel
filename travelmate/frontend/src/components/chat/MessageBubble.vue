@@ -93,7 +93,7 @@ function speakMsg() {
 
 <template>
   <div
-    class="flex w-full"
+    class="flex w-full msg-slide-in"
     :class="isUser ? 'justify-end' : 'justify-start'"
     @contextmenu="openMenu"
   >

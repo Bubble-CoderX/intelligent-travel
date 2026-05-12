@@ -16,3 +16,12 @@
 .dark .prose { color: #d6d3d1; }
 .dark .prose h1, .dark .prose h2, .dark .prose h3 { color: #e7e5e4; }
 .dark .prose strong { color: #e7e5e4; }
+
+/* ── 消息滑入动画 ─────────────────────────────────── */
+@keyframes msgSlideIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.msg-slide-in {
+  animation: msgSlideIn 0.3s ease-out both;
+}

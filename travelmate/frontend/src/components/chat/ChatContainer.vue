@@ -9,12 +9,14 @@ import TripCard from './TripCard.vue'
 import SessionSidebar from './SessionSidebar.vue'
 import PreferencesDrawer from '@/components/PreferencesDrawer.vue'
 import StyleSelector from './StyleSelector.vue'
+import BatchExpandModal from './BatchExpandModal.vue'
 
 const props = defineProps<{ dark?: boolean }>()
 const store = useChatStore()
 const listRef = ref<HTMLDivElement>()
 const showPrefs = ref(false)
 const showSidebar = ref(true)
+const showBatchExpand = ref(false)
 const switchingStyleMsg = ref<{ id: string; content: string } | null>(null)
 
 // ── 天气 ────────────────────────────────────────────
@@ -175,6 +177,15 @@ onUnmounted(() => {
           </div>
           <button
             class="rounded-lg p-2 text-stone-400 hover:bg-stone-100 hover:text-stone-600 transition-colors dark:hover:bg-stone-700 dark:hover:text-stone-300"
+            title="批量扩充知识库"
+            @click="showBatchExpand = true"
+          >
+            <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+            </svg>
+          </button>
+          <button
+            class="rounded-lg p-2 text-stone-400 hover:bg-stone-100 hover:text-stone-600 transition-colors dark:hover:bg-stone-700 dark:hover:text-stone-300"
             @click="showPrefs = true"
           >
             <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -247,5 +258,8 @@ onUnmounted(() => {
 
     <!-- 偏好设置抽屉 -->
     <PreferencesDrawer v-if="showPrefs" @close="showPrefs = false" />
+
+    <!-- 批量扩充知识库 -->
+    <BatchExpandModal v-if="showBatchExpand" @close="showBatchExpand = false" />
   </div>
 </template>

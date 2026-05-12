@@ -146,6 +146,16 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  async function renameSession(id: string, title: string) {
+    try {
+      await api.put(`/sessions/${id}/rename`, { title }, { params: { device_id: getDeviceId() } })
+      const s = sessions.value.find(s => s.session_id === id)
+      if (s) s.title = title
+    } catch {
+      // 静默失败
+    }
+  }
+
   async function sendMessage(content: string, appendUserMsg = true, existingUserMsgId?: string, tripStyle?: string) {
     const userMsgId = existingUserMsgId ?? crypto.randomUUID()
     if (appendUserMsg) {
@@ -215,5 +225,6 @@ export const useChatStore = defineStore('chat', () => {
     createSession,
     switchSession,
     deleteSession,
+    renameSession,
   }
 })
