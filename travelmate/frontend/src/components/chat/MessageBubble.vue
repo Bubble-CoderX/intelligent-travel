@@ -21,6 +21,7 @@ const isSystem = computed(() => props.message.role === 'system')
 const isAssistant = computed(() => props.message.role === 'assistant')
 const isProactive = computed(() => props.message.type === 'proactive')
 const isGreeting = computed(() => props.message.type === 'proactive' && props.message.metadata?.proactive_type === 'greeting')
+const isAutoResearched = computed(() => props.message.role === 'assistant' && /^🔍\s*已为你自动调研了/.test(props.message.content))
 const canSpeak = computed(() => !isUser.value && !isSystem.value && ttsSupported.value)
 const isFailed = computed(() => !!props.message.failed)
 
@@ -153,6 +154,13 @@ function speakMsg() {
 
       <!-- 正常 assistant 消息 -->
       <template v-else>
+        <!-- 已自动调研标签 -->
+        <div
+          v-if="isAutoResearched"
+          class="mb-2 inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-medium text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400"
+        >
+          🔍 已自动调研
+        </div>
         <div class="prose prose-sm max-w-none prose-p:my-1 prose-ul:my-1 prose-li:my-0" v-html="renderedContent" />
         <div
           v-if="safetyWarning"

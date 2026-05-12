@@ -146,7 +146,7 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
-  async function sendMessage(content: string, appendUserMsg = true, existingUserMsgId?: string) {
+  async function sendMessage(content: string, appendUserMsg = true, existingUserMsgId?: string, tripStyle?: string) {
     const userMsgId = existingUserMsgId ?? crypto.randomUUID()
     if (appendUserMsg) {
       addMessage({
@@ -160,11 +160,14 @@ export const useChatStore = defineStore('chat', () => {
 
     isLoading.value = true
     try {
-      const res = await api.post('/chat', {
+      const payload: Record<string, any> = {
         message: content,
         device_id: getDeviceId(),
         session_id: sessionId.value,
-      })
+      }
+      if (tripStyle) payload.trip_style = tripStyle
+
+      const res = await api.post('/chat', payload)
       const data = res.data
       addMessage({
         id: crypto.randomUUID(),

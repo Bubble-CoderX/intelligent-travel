@@ -24,7 +24,7 @@ async def chat_endpoint(req: ChatRequest):
     session_id = req.session_id or "default"
 
     try:
-        result = await route_intent(req.message, req.device_id, session_id=session_id)
+        result = await route_intent(req.message, req.device_id, session_id=session_id, trip_style=req.trip_style)
     except Exception as exc:
         logger.exception("意图识别管道异常")
         return ChatResponse(
@@ -78,6 +78,7 @@ async def chat_endpoint(req: ChatRequest):
         else:
             metadata["destination"] = extracted.get("destination", "")
             metadata["days"] = extracted.get("days", 0)
+        metadata["trip_style"] = req.trip_style or "default"
 
     save_message(req.device_id, session_id, "user", req.message, intent)
     save_message(req.device_id, session_id, "assistant", reply, intent)

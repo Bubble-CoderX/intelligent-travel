@@ -22,6 +22,7 @@ class ChatRequest(BaseModel):
     message: str = Field(..., description="用户输入的消息")
     device_id: str = Field(..., description="设备唯一标识")
     session_id: str | None = Field(default=None, description="会话 ID")
+    trip_style: str | None = Field(default=None, description="行程风格：compact/leisure/culture")
 
 
 class ChatResponse(BaseModel):

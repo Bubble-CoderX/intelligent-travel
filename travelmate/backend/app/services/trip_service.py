@@ -13,7 +13,7 @@ from app.services.llm_client import call_llm
 from app.services.map_service import search_places
 from app.services.memory_service import get_all_preferences
 from app.services.weather_service import get_weather_forecast
-from app.utils.trip_prompts import TRIP_PLAN_PROMPT
+from app.utils.trip_prompts import TRIP_PLAN_PROMPT, STYLE_INSTRUCTIONS
 
 logger = logging.getLogger(__name__)
 
@@ -106,7 +106,7 @@ def _save_trip_to_db(
 
 
 async def generate_trip_plan(
-    device_id: str, destination: str, days: int
+    device_id: str, destination: str, days: int, style: str = "default"
 ) -> dict[str, Any]:
     """
     完整行程生成流程：
@@ -115,6 +115,7 @@ async def generate_trip_plan(
     poi_text = _format_poi_text(destination)
     weather_text = _format_weather_text(destination)
     preferences_text = _format_preferences_text(device_id)
+    style_instructions = STYLE_INSTRUCTIONS.get(style, "")
 
     prompt = TRIP_PLAN_PROMPT.format(
         destination=destination,
@@ -122,6 +123,7 @@ async def generate_trip_plan(
         poi_text=poi_text,
         weather_text=weather_text,
         preferences_text=preferences_text,
+        style_instructions=style_instructions,
     )
 
     raw = await call_llm(

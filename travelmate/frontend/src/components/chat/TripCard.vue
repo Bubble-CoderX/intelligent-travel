@@ -6,7 +6,24 @@ const props = defineProps<{
   tripPlan: TripPlan | null
   safetyWarning?: string
   fallbackSummary?: string
+  tripStyle?: string
 }>()
+
+const emit = defineEmits<{
+  switchStyle: []
+}>()
+
+// ── 行程风格标签 ──────────────────────────────────────
+const STYLE_LABELS: Record<string, { emoji: string; label: string }> = {
+  compact: { emoji: '⚡', label: '紧凑打卡型' },
+  leisure: { emoji: '🌴', label: '休闲度假型' },
+  culture: { emoji: '📚', label: '深度文化型' },
+}
+
+const currentStyleLabel = computed(() => {
+  if (!props.tripStyle || props.tripStyle === 'default') return null
+  return STYLE_LABELS[props.tripStyle] ?? null
+})
 
 // ── Types ────────────────────────────────────────────
 interface SpotItem {
@@ -182,7 +199,21 @@ const mealEmoji = (type: string) => {
       <div class="flex items-center justify-between">
         <div>
           <h3 class="text-lg font-bold text-white">{{ tripPlan.destination }} · {{ tripPlan.days?.length ?? 0 }} 日游</h3>
-          <p class="mt-1 text-sm text-amber-50">{{ tripPlan.summary }}</p>
+          <div class="mt-1 flex items-center gap-2">
+            <p v-if="!currentStyleLabel" class="text-sm text-amber-50">{{ tripPlan.summary }}</p>
+            <span
+              v-if="currentStyleLabel"
+              class="inline-flex items-center gap-1 rounded-full bg-white/25 px-2.5 py-0.5 text-xs font-medium text-white"
+            >
+              {{ currentStyleLabel.emoji }} {{ currentStyleLabel.label }}
+            </span>
+            <button
+              class="inline-flex items-center gap-1 rounded-full bg-white/20 px-2.5 py-0.5 text-xs text-white/80 transition-colors hover:bg-white/30 hover:text-white"
+              @click.stop="emit('switchStyle')"
+            >
+              🔄 换种风格
+            </button>
+          </div>
         </div>
         <div class="flex items-center gap-2">
           <span class="rounded-full bg-white/20 px-3 py-1 text-xs font-medium text-white">

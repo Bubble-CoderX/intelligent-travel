@@ -1,23 +1,40 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
 import { useSpeechRecognition } from '@/composables/useSpeechRecognition'
+import StyleSelector from './StyleSelector.vue'
 
-const emit = defineEmits<{ send: [content: string] }>()
+const emit = defineEmits<{ send: [content: string, tripStyle?: string] }>()
 defineProps<{ disabled?: boolean }>()
 
 const input = ref('')
+const tripStyle = ref<string | undefined>(undefined)
 const { isListening, transcript, errorMsg, isSupported, start, stop } = useSpeechRecognition()
 
 watch(transcript, (val) => {
   if (val) input.value = val
 })
 
+// 检测旅行关键词 → 显示风格选择器
+const TRIP_KEYWORDS = /规划|行程|旅游|旅行|出游|几天|游玩|度假|攻略|出行/
+const showStyleSelector = computed(() => TRIP_KEYWORDS.test(input.value))
+
+// 选择风格后直接发送
+function handleStyleSelect(style: string) {
+  const text = input.value.trim()
+  if (!text) return
+  if (isListening.value) stop()
+  emit('send', text, style)
+  input.value = ''
+  tripStyle.value = undefined
+}
+
 function handleSend() {
   const text = input.value.trim()
   if (!text) return
   if (isListening.value) stop()
-  emit('send', text)
+  emit('send', text, tripStyle.value)
   input.value = ''
+  tripStyle.value = ''
   transcript.value = ''
 }
 
@@ -39,8 +56,11 @@ function handleKeydown(e: KeyboardEvent) {
 </script>
 
 <template>
-  <div class="flex items-end gap-1.5 border-t border-stone-200 bg-white px-3 py-3 sm:gap-2 sm:px-4 sm:py-4 dark:border-stone-700 dark:bg-stone-800">
-    <textarea
+  <div class="border-t border-stone-200 bg-white px-3 py-3 sm:px-4 sm:py-4 dark:border-stone-700 dark:bg-stone-800">
+    <!-- 行程风格选择器 -->
+    <StyleSelector v-if="showStyleSelector" class="mb-2" @select="handleStyleSelect" />
+    <div class="flex items-end gap-1.5 sm:gap-2">
+      <textarea
       v-model="input"
       :disabled="disabled"
       rows="1"
@@ -75,5 +95,6 @@ function handleKeydown(e: KeyboardEvent) {
     >
       发送
     </button>
+    </div>
   </div>
 </template>

@@ -76,7 +76,7 @@ def _get_user_preferences(device_id: str) -> str:
     return "\n".join(f"- {p['category']}/{p['key']}: {p['value']}" for p in prefs)
 
 
-async def route_intent(user_message: str, device_id: str, session_id: str | None = None) -> dict:
+async def route_intent(user_message: str, device_id: str, session_id: str | None = None, trip_style: str | None = None) -> dict:
     """
     完整意图识别管道：
     输入安全检查 → 第一层正则 → 第二层 AI → 输出安全检查 → 返回结果
@@ -178,7 +178,7 @@ async def route_intent(user_message: str, device_id: str, session_id: str | None
                 reply = f"{safety.get('warning', '')}\n\n当前不适宜生成完整行程计划，请先确保安全情况。"
             else:
                 try:
-                    result = await generate_trip_plan(device_id, destination, int(trip_days))
+                    result = await generate_trip_plan(device_id, destination, int(trip_days), style=trip_style or "default")
                     reply = result["summary"]
                     # 保存结构化数据到 extracted，供 chat.py 写入 metadata
                     extracted["_trip_plan"] = result.get("itinerary_json")
@@ -239,7 +239,7 @@ async def route_intent(user_message: str, device_id: str, session_id: str | None
             reply = "请问你想了解哪个景点或城市的信息呢？"
         else:
             try:
-                reply = await query_knowledge(user_message)
+                reply = await query_knowledge(user_message, spot_name=keyword or None)
             except Exception as exc:
                 logger.warning("知识查询失败：%s", exc)
                 reply = f"查询「{keyword}」时遇到了问题：{type(exc).__name__}。请稍后再试。"

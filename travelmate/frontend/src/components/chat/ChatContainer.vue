@@ -8,12 +8,14 @@ import ChatInput from './ChatInput.vue'
 import TripCard from './TripCard.vue'
 import SessionSidebar from './SessionSidebar.vue'
 import PreferencesDrawer from '@/components/PreferencesDrawer.vue'
+import StyleSelector from './StyleSelector.vue'
 
 const props = defineProps<{ dark?: boolean }>()
 const store = useChatStore()
 const listRef = ref<HTMLDivElement>()
 const showPrefs = ref(false)
 const showSidebar = ref(true)
+const switchingStyleMsg = ref<{ id: string; content: string } | null>(null)
 
 // ── 天气 ────────────────────────────────────────────
 const weather = ref<{ city: string; weather: string; temp: string } | null>(null)
@@ -77,8 +79,29 @@ watch(() => store.sessionId, (newId) => {
   switchedSessionId = newId
 })
 
-function handleSend(content: string) {
-  store.sendMessage(content)
+function handleSend(content: string, tripStyle?: string) {
+  store.sendMessage(content, true, undefined, tripStyle)
+}
+
+/** "换种风格" — 找到对应 user 消息，展示风格选择器 */
+function handleSwitchStyle(msg: { id: string }) {
+  const idx = store.messages.findIndex(m => m.id === msg.id)
+  if (idx < 0) return
+  for (let i = idx - 1; i >= 0; i--) {
+    if (store.messages[i].role === 'user') {
+      switchingStyleMsg.value = { id: store.messages[i].id, content: store.messages[i].content }
+      return
+    }
+  }
+}
+
+/** 选中新风格后重新发送 */
+function handleStyleSwitchSelect(style: string) {
+  if (!switchingStyleMsg.value) return
+  const content = switchingStyleMsg.value.content
+  switchingStyleMsg.value = null
+  // 用 false 不再追加 user 消息（因为原 user 消息还在历史里），直接发请求
+  store.sendMessage(content, false, undefined, style)
 }
 
 function isTripCard(msg: { type: string }) {
@@ -194,6 +217,8 @@ onUnmounted(() => {
             :trip-plan="msg.metadata?.trip_plan ?? null"
             :safety-warning="String(msg.metadata?.safety_warning ?? '')"
             :fallback-summary="!msg.metadata?.trip_plan ? msg.content : ''"
+            :trip-style="msg.metadata?.trip_style"
+            @switch-style="handleSwitchStyle(msg)"
           />
           <MessageBubble v-else :message="msg" />
         </template>
@@ -209,6 +234,14 @@ onUnmounted(() => {
         </div>
       </div>
 
+      <!-- 换种风格选择器 -->
+      <div v-if="switchingStyleMsg" class="border-t border-stone-200 bg-amber-50 px-4 py-2 dark:border-stone-700 dark:bg-stone-800">
+        <div class="flex items-center justify-between">
+          <span class="text-xs text-stone-500 dark:text-stone-400">选择新风格重新生成：</span>
+          <button class="text-xs text-stone-400 hover:text-stone-600 dark:hover:text-stone-300" @click="switchingStyleMsg = null">✕ 取消</button>
+        </div>
+        <StyleSelector class="mt-1" @select="handleStyleSwitchSelect" />
+      </div>
       <ChatInput :disabled="store.isLoading" @send="handleSend" />
     </div>
 

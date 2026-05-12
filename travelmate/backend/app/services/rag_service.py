@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 from typing import Any
 
@@ -92,13 +93,47 @@ async def query_knowledge(question: str, spot_name: str | None = None) -> str:
     """完整 RAG 流程：检索知识 → 双层兜底 → 调用 LLM 生成导游式回答。
 
     兜底策略：
-    1. 检索为空（知识库中无相关内容） → LLM 通用知识 + 诚实标注来源
-    2. 检索有结果但 spot_name 明确时无匹配 → 低置信度标记，LLM 自行判断
-    3. 正常情况 → 知识库 Context 注入，高质量导游回答
+    1. 指定了 spot_name 但知识库中无该景点 → 自动调研 → 重新检索
+    2. 检索为空 → LLM 通用知识 + 诚实标注来源
+    3. 检索有结果但 spot_name 明确时无匹配 → 低置信度标记
+    4. 正常情况 → 知识库 Context 注入，高质量导游回答
     """
-    retrieved = retrieve_knowledge(question, spot_name, top_k=5)
+    # 第一步：检查指定景点是否有直接匹配的知识
+    if spot_name:
+        direct_match = retrieve_knowledge(question, spot_name=spot_name, top_k=5)
+        if not direct_match:
+            # 知识库中无该景点 → 尝试自动调研
+            from app.services.knowledge_expander import auto_expand, has_local_knowledge
+            if not has_local_knowledge(spot_name):
+                try:
+                    expand_result = await auto_expand(spot_name)
+                    if expand_result.get("status") == "ok":
+                        # 自动调研成功，重新检索
+                        direct_match = retrieve_knowledge(question, spot_name=spot_name, top_k=5)
+                        if direct_match:
+                            context = "\n\n".join(
+                                f"【{r['spot_name']}】{r['text']}" for r in direct_match
+                            )
+                            prompt = (
+                                f"你是「AI智游伴」的景点讲解员。\n\n"
+                                f"以下是从网络检索并整理的关于「{spot_name}」的知识：\n\n{context}\n\n"
+                                f"请基于以上知识，用生动有趣的导游风格回答用户问题。\n\n"
+                                f"用户问题：{question}"
+                            )
+                            answer = await call_llm(
+                                messages=[{"role": "user", "content": question}],
+                                system_prompt=prompt,
+                                temperature=0.7,
+                                max_tokens=800,
+                            )
+                            return f"🔍 已为你自动调研了「{spot_name}」\n\n{answer}"
+                except Exception as exc:
+                    logger.warning("自动调研「%s」失败：%s", spot_name, exc)
 
-    # 【兜底 1】检索为空 → LLM 通用知识，诚实告知
+    # 第二步：通用语义检索（不限景点名）
+    retrieved = retrieve_knowledge(question, spot_name=None, top_k=5)
+
+    # 检索为空 → LLM 通用知识，诚实告知
     if not retrieved:
         fallback_prompt = (
             "你是「AI智游伴」的景点讲解员。知识库中没有检索到与用户问题直接相关的资料。\n"
@@ -118,7 +153,7 @@ async def query_knowledge(question: str, spot_name: str | None = None) -> str:
         f"【{r['spot_name']}】{r['text']}" for r in retrieved
     )
 
-    # 【兜底 2】spot_name 明确但检索结果中无匹配 → 低置信度 Context
+    # spot_name 明确但检索结果中无匹配 → 低置信度 Context
     if spot_name:
         matching_chunks = [r for r in retrieved if r["spot_name"] == spot_name]
         if not matching_chunks:
@@ -147,3 +182,15 @@ async def query_knowledge(question: str, spot_name: str | None = None) -> str:
         max_tokens=800,
     )
     return answer
+
+
+def _extract_spot_name(question: str) -> str:
+    """从问题中提取景点名称（简单启发式：连续的中文字符片段）。"""
+    # 去掉常见动词/介词，找最长的中文片段
+    cleaned = re.sub(r'[？?！!。，,的了在是吗我你想问有没有什么怎样哪个哪些哪个]', '', question)
+    # 匹配连续中文字符（2字以上）
+    matches = re.findall(r'[一-鿿]{2,}', cleaned)
+    if matches:
+        # 返回最长的匹配
+        return max(matches, key=len)
+    return ""
