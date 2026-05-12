@@ -942,3 +942,376 @@ c7633da  修复 requirements.txt 中文注释导致 pip GBK 解码失败
 **最大教训**：随着项目复杂度增加，Bug 的排查难度指数级上升。阶段三的 Bug 改一行代码就好，阶段十的 Bug 需要同时改前后端三个文件，对话上下文的 Bug 需要追踪从正则→AI→LLM→数据库→前端的完整链路。
 
 > **一句话记住**：代码越复杂，调试越需要系统性思维——不是"哪里报错改哪里"，而是"数据从哪里来，经过了什么变换，在哪里出了问题"。
+
+---
+
+# 第四次会话协同记录（P0-P3 优化方案实施 + Bug 修复）
+
+> 本次会话从《AI智游伴-完整实现方案.md》的 13 个优化模块审计开始，逐个实施缺失功能，
+> 并在实施和用户测试过程中修复了 7 个真实 Bug。涵盖了从 UI 细节到后端架构的全栈改动。
+
+## 一、优化方案审计与实施概览
+
+### 1.1 审计结果
+
+对完整实现方案的 13 个模块逐个比对代码，确认：
+- **13 个核心模块全部到位**（P0-P3 优化方案）
+- **3 个 P3 子项缺失**：会话重命名 UI、动态 placeholder 轮播、消息滑入动画
+- **4-5 个 UI 细节缺失**：批量扩充弹窗、知识纠正闭环等
+
+### 1.2 实施的 6 个缺失功能（commit `a349483`）
+
+| 功能 | 文件 | 核心实现 |
+|------|------|----------|
+| 会话重命名 UI | `SessionSidebar.vue`、`chat.ts` | 双击标题进入编辑，Enter 提交/Escape 取消，hover 显示编辑+删除按钮 |
+| 动态 placeholder 轮播 | `ChatInput.vue` | 5 条提示语 5 秒间隔轮播，`setInterval` + `onUnmounted` 清理 |
+| 消息滑入动画 | `style.css`、`MessageBubble.vue` | `@keyframes msgSlideIn` + `.msg-slide-in` 类 |
+| 批量扩充知识库弹窗 | `BatchExpandModal.vue`、`ChatContainer.vue` | 完整 Modal 组件 + SSE 流式进度 + 15 个预设景点 |
+| 批量扩充后端 API | `knowledge.py` | `POST /knowledge/auto-expand-batch` + `StreamingResponse` SSE |
+| 用户反馈纠正闭环 | `knowledge_expander.py`、`intent_router.py` | 正则检测纠正意图 → LLM 提取纠正信息 → 修改文件 → 重新向量化 |
+
+### 1.3 暗色模式持久化与重启检测（commit `7fcefae`）
+
+| 改动 | 文件 | 内容 |
+|------|------|------|
+| 暗色模式同步初始化 | `App.vue` | `initDark()` 同步读 localStorage，消除 `onMounted` 异步导致的闪白 |
+| 后端重启检测 | `main.py`、`App.vue` | `_STARTUP_TS` 模块级变量 + `GET /startup-ts` 接口，前端 onMounted 比对时间戳 |
+| 批量扩充 URL 修复 | `BatchExpandModal.vue` | `/api/knowledge/...` → `http://localhost:8000/knowledge/...`（fetch 不走 axios） |
+
+### 1.4 行程方案持久化（commit `1698311`）
+
+**问题**：生成 TripCard 后刷新页面，结构化卡片降级为纯文本。
+
+**全链路修复（7 个文件）**：
+
+| 层级 | 文件 | 改动 |
+|------|------|------|
+| DB schema | `database.py` | `ALTER TABLE conversations ADD COLUMN metadata TEXT`（增量迁移） |
+| 存储函数 | `context_service.py` | `save_message()` 新增 `metadata` 参数，dict → JSON |
+| API 端点 | `chat.py` | assistant 消息存储时传入 `metadata=metadata` |
+| 查询返回 | `sessions.py` | SELECT 加 `metadata` 列，JSON 反序列化返回 |
+| 前端加载 | `chat.ts` | `switchSession` 按 intent 映射 type + 传递 metadata |
+| 渲染判断 | `ChatContainer.vue` | `isTripCard` 加严为 `type + role + trip_plan` 三重条件 |
+
+### 1.5 会话智能命名 + 意图识别上下文感知（commit `2ea51fd`）
+
+**会话命名**：
+- `sessions.py` 新增 `update_session_title()` 公共函数
+- `chat.py` 自动命名逻辑：首条消息 → 截取消息内容；行程方案生成 → "目的地·N日游"
+- `SessionSidebar.vue` 时间改为 HH:MM 格式，去掉消息条数显示
+
+**意图识别上下文感知**：
+- `intent_router.py` 的 `INTENT_RECOGNITION_PROMPT` 新增 `{recent_context}` 占位符
+- `route_intent` 调 AI 前取最近 6 条对话历史注入 prompt
+- 新增"上下文延续"优先级规则，LLM 看到上文问天气 → 用户回复地名 → 正确返回 WEATHER
+
+---
+
+## 二、7 个 Bug 详细调试记录
+
+### Bug 1：批量扩充弹窗"开始扩充"按钮点击后闪退
+
+**现象**：点击"开始扩充"按钮，弹窗闪了一下就消失了，没有显示进度。
+
+**排查过程**：
+
+1. 用户截图显示弹窗消失，无错误提示
+2. 检查 `BatchExpandModal.vue` 的 `startBatchExpand()` 函数
+3. 发现 `fetch()` 使用了相对路径 `/api/knowledge/auto-expand-batch`
+
+**根因**：Vue 项目中 `fetch()` 是原生 Web API，不走 axios 实例。axios 配置了 `baseURL: 'http://localhost:8000'`，但 `fetch()` 完全独立，相对路径会请求 `localhost:5173`（前端 dev server），返回 404。
+
+**修复**：
+```typescript
+// 之前（错误）
+const res = await fetch('/api/knowledge/auto-expand-batch', { ... })
+
+// 之后（正确）
+const API_BASE = 'http://localhost:8000'
+const res = await fetch(`${API_BASE}/knowledge/auto-expand-batch`, { ... })
+```
+
+同时增加了 `res.ok` 检查和红色错误横幅 `fetchError`，让连接失败时用户能看到具体原因。
+
+**教训**：`fetch()` vs `axios` 是 Vue 项目中常见的遗漏点——两者是完全独立的网络层，axios 的 `baseURL`、拦截器等配置对 `fetch()` 无效。
+
+---
+
+### Bug 2：暗色模式刷新页面后偏好丢失
+
+**现象**：设置为暗色模式后刷新页面，自动变回浅色。
+
+**排查过程**：
+
+1. 初始实现用 `onMounted` 异步读 localStorage
+2. 但 `ref(false)` 初始化后，`watchEffect` 立即执行，把 `false` 写入 localStorage
+3. `onMounted` 回调到达时，localStorage 已被覆盖为 `false`
+
+**根因**：Vue 的 `onMounted` 是异步触发的。`ref()` 初始化 → `watchEffect` 立即执行写入 `false` → `onMounted` 读取时已是 `false`。
+
+**修复**：同步函数 `initDark()` 在 `ref()` 初始化时立即读取 localStorage，不依赖任何异步钩子：
+```typescript
+function initDark(): boolean {
+  const stored = localStorage.getItem('travelmate_dark')
+  if (stored !== null) return stored === 'true'
+  return window.matchMedia('(prefers-color-scheme: dark)').matches
+}
+const dark = ref(initDark())  // 同步读取，无时序问题
+```
+
+**教训**：`ref()` 的初始值应该同步确定，不能依赖 `onMounted` 等异步钩子——`watchEffect` 会在 `onMounted` 之前执行。
+
+---
+
+### Bug 3：后端重启后暗色模式未重置为浅色
+
+**现象**：后端重启后刷新页面，暗色模式仍然保持，用户希望重启后回到浅色。
+
+**根因**：localStorage 只区分"页面刷新"，无法区分"后端重启"——两个场景都只是页面重新加载。
+
+**修复**：引入"后端启动时间戳"桥接前后端状态：
+- `main.py` 模块级 `_STARTUP_TS = int(time.time())` + `GET /startup-ts` 接口
+- `App.vue` onMounted 异步请求 `/startup-ts`，与 localStorage 存储值对比
+- 时间戳不同（后端重启了）→ `dark.value = false` 回到浅色
+
+**教训**：状态持久化要区分两个维度——"页面刷新"是客户端状态，"后端重启"是服务端状态，两者需要桥梁（startup-ts）来同步语义。
+
+---
+
+### Bug 4：行程方案刷新后样式丢失
+
+**现象**：生成 TripCard 行程方案后刷新页面，结构化卡片变成纯文本"杭州三日游，融合西湖经典……"
+
+**排查过程**：
+
+1. 诊断发现 metadata（含 trip_plan 结构化数据）只存在于 API 响应中，从未写入数据库
+2. 刷新后 `switchSession` 从 DB 加载消息，type 被硬编码为 `'text'`
+3. TripCard 渲染条件 `type === 'card'` 不满足，降级为 MessageBubble
+
+**修复**：7 个文件全链路打通（见 1.4 节），metadata 从 DB → API → 前端完整传递。
+
+**教训**：加一个字段看似简单，实际要改 5 层（DB schema → 存储函数 → API 端点 → 响应序列化 → 前端类型映射），任何一环断裂都会导致数据丢失。
+
+---
+
+### Bug 5：metadata 持久化引发的回归——所有消息变成 TripCard
+
+**现象**：Bug 4 修复后，刷新页面发现所有消息（包括用户消息和普通聊天）都显示"目的地："前缀，样式全变了。
+
+**排查过程**：
+
+1. 用户截图显示：用户说"杭州"、assistant 问"请问计划玩几天？"都渲染成了 TripCard
+2. 检查 `switchSession`：`m.intent === 'TRIP_PLAN' ? 'card' : 'text'`
+3. 关键发现：**用户消息 "杭州" 也被存为 TRIP_PLAN 意图**（chat.py 中 `save_message(user, ..., intent)` 把用户消息的 intent 设为 TRIP_PLAN）
+4. `isTripCard` 只检查 `type === 'card'`，不区分 role 和 metadata
+5. TripCard 的 fallback 模板：`<p>目的地：{{ safetyWarning ? '' : '' }}</p>`——当 `tripPlan` 为 null 但 `fallbackSummary` 有值时，显示"目的地："前缀
+
+**根因**：意图（intent）≠ 展示形态（type）。用户说"杭州"触发 TRIP_PLAN 意图，但这条用户消息本身不是行程方案。
+
+**修复**：`isTripCard` 加严为三重条件：
+```typescript
+// 之前
+return msg.type === 'card'
+// 现在
+return msg.type === 'card' && msg.role === 'assistant' && !!msg.metadata?.trip_plan
+```
+
+**教训**：修复功能 X 时要检查对功能 Y 的影响。type 映射逻辑不应仅依赖 intent，应该用数据是否完整（`trip_plan` 存在）作为最终判断标准。条件判断应尽可能严格。
+
+---
+
+### Bug 6：TRIP_PLAN 多轮对话——"三天"没有关联上文的"杭州"
+
+**现象**：用户说"杭州" → AI 问"请问计划玩几天？" → 用户说"三天" → AI 回复"请问你想去哪里旅行呢？"，没有将"三天"与上文的"杭州"关联。
+
+**根因**：TRIP_PLAN 分支在 destination 为空时直接报错询问，没有利用对话历史做上下文补全。与 KNOWLEDGE 意图的代词消解问题完全同构。
+
+**修复**：在 `intent_router.py` 的 TRIP_PLAN 分支中，destination 为空时先读取对话历史，用 LLM 提取最近提到的目的地：
+```python
+if not destination:
+    history = await get_recent_history(device_id, session_id=session_id)
+    resolve_prompt = "从以下对话历史中，提取用户最近提到的旅行目的地……"
+    resolved = await call_llm(...)
+    destination = resolved.strip() if resolved.strip() != "无" else ""
+```
+
+**教训**：代词消解（"三天"指"杭州的三天"、"那附近"指"西湖附近"）是多轮对话的核心难题。最实用的方案是用 LLM 从历史中提取指代对象，而非维护复杂的规则引擎。同一个解决方案可以复用在多个意图分支中。
+
+---
+
+### Bug 7：会话标题整坨 JSON + 天气对话中说地名被错误识别为行程规划
+
+**问题 A：会话标题显示整坨行程 JSON**
+
+现象：会话标题显示"哈尔滨·[{'day_index': 1, 'date': None, 'theme': ...}日游"
+
+根因：`trip_plan.get("days", 0)` 取到的是 `days` 数组（包含每天的行程对象），不是天数。`f"{dest}·{days}日游"` 渲染时数组被转成字符串。
+
+修复：改为 `len(trip_plan.get("days", []))`，正确取数组长度。
+
+**问题 B：天气对话中说地名被错误识别为行程规划**
+
+现象：用户在天气对话中说"哈尔滨"，AI 回复"好的，你想去哈尔滨！请问计划玩几天呢？"而不是回复哈尔滨天气。
+
+根因：AI 意图识别是无状态的，LLM 只看当前消息"哈尔滨"，不知道上文在问天气。看到地名就按关键词优先匹配为 TRIP_PLAN。
+
+修复：
+- `INTENT_RECOGNITION_PROMPT` 新增"上下文延续"优先级规则
+- `route_intent` 调 AI 前取最近 6 条对话历史注入 `{recent_context}` 字段
+- LLM 看到"上轮问天气城市 → 用户回复地名"后，正确返回 WEATHER
+
+**教训**：
+- API 返回的字段名 ≠ 数据类型：`trip_plan.days` 是 `DayPlan[]` 数组，不是数字，取值前先确认实际类型
+- LLM 意图识别需要对话历史：单条消息的意图分类天然存在歧义（"哈尔滨"可以是天气/行程/知识），必须注入上下文
+
+---
+
+## 三、本次会话的完整 Git 提交记录
+
+```
+2ea51fd  feat: 会话智能命名 + 意图识别上下文感知
+1698311  fix: 行程方案刷新丢失 + TRIP_PLAN 多轮对话上下文补全
+7fcefae  fix: 批量扩充URL修复 + 暗色模式持久化与重启检测
+a349483  feat: UI 细节补全 + 批量扩充 + 知识纠正闭环
+```
+
+---
+
+## 四、本次会话修改的完整文件清单
+
+### 后端
+
+| 文件 | 改动次数 | 改动内容 |
+|------|----------|----------|
+| `app/main.py` | 1 | 新增 `_STARTUP_TS` + `GET /startup-ts` 接口 |
+| `app/api/chat.py` | 3 | metadata 传入 save_message + 会话自动命名 + days 取 len() |
+| `app/api/sessions.py` | 2 | 返回 metadata 字段 + 新增 `update_session_title()` |
+| `app/api/knowledge.py` | 1 | 新增 `POST /knowledge/auto-expand-batch` SSE 端点 |
+| `app/models/database.py` | 1 | conversations 表加 `metadata TEXT` 列 |
+| `app/services/context_service.py` | 1 | `save_message()` 支持 metadata 参数 |
+| `app/services/intent_router.py` | 3 | TRIP_PLAN 代词消解 + 纠正闭环 + 意图识别上下文注入 |
+| `app/services/knowledge_expander.py` | 1 | 新增 `correct_knowledge()` 纠正闭环 |
+
+### 前端
+
+| 文件 | 改动次数 | 改动内容 |
+|------|----------|----------|
+| `src/App.vue` | 2 | 暗色模式同步初始化 + 后端重启检测 |
+| `src/stores/chat.ts` | 2 | 重命名会话 + 加载时还原 type 和 metadata |
+| `src/style.css` | 1 | 新增 `@keyframes msgSlideIn` 动画 |
+| `src/components/chat/ChatContainer.vue` | 3 | 批量扩充入口 + `isTripCard` 三重条件 |
+| `src/components/chat/ChatInput.vue` | 1 | 动态 placeholder 轮播 |
+| `src/components/chat/MessageBubble.vue` | 1 | 新增 `msg-slide-in` 类 |
+| `src/components/chat/SessionSidebar.vue` | 2 | 重命名 UI + 时间 HH:MM + 去掉条数 |
+| `src/components/chat/BatchExpandModal.vue` | 2 | 新建组件 + URL 修复 + 错误横幅 |
+
+---
+
+## 五、本次会话踩坑总结
+
+### 坑1：`fetch()` vs `axios` 是两套独立网络层
+
+Vue 项目中 axios 实例配置的 `baseURL`、拦截器等对原生 `fetch()` 完全无效。用 `fetch()` 时必须写完整 URL。这是最常见的遗漏点。
+
+### 坑2：`onMounted` 是异步的，`ref()` 初始值应同步确定
+
+`ref()` 初始化后 `watchEffect` 立即执行，如果初始值依赖 `onMounted` 中的异步操作，`watchEffect` 会在数据就绪前执行，导致状态被覆盖。
+
+### 坑3：持久化要区分"页面刷新"和"后端重启"
+
+localStorage 是客户端状态，只能区分"页面刷新"。后端重启是服务端状态，两者需要桥梁（startup timestamp）来同步语义。
+
+### 坑4：metadata 全链路打通需要改 5 层
+
+加一个字段看似简单：DB schema → 存储函数 → API 端点 → 响应序列化 → 前端类型映射，任何一环断裂都会导致数据丢失。
+
+### 坑5：意图（intent）≠ 展示形态（type）
+
+用户说"杭州"触发 TRIP_PLAN 意图，但这条用户消息本身不是行程方案。不能简单地 `if intent == TRIP_PLAN then type = 'card'`——应该用数据是否完整（trip_plan 存在）作为渲染判断标准。
+
+### 坑6：API 返回字段名 ≠ 数据类型
+
+`trip_plan.days` 在 TripPlan 接口中是 `DayPlan[]` 数组，不是数字。用 `.get("days", 0)` 取值时拿到数组，`f"...{days}..."` 渲染出整个数组。取值前先确认实际类型。
+
+### 坑7：LLM 意图识别需要对话历史
+
+单条消息的意图分类天然存在歧义（"哈尔滨"可以是天气/行程/知识）。必须把最近对话历史注入 prompt，让 LLM 理解"上文在问什么"，才能正确判断当前消息是延续还是新话题。
+
+---
+
+## 六、四次会话协同模式对比
+
+| 维度 | 第一次（Phase 0-3） | 第二次（Phase 4 验证） | 第三次（Phase 5-12） | 第四次（P0-P3 优化） |
+|------|---------------------|----------------------|---------------------|---------------------|
+| 工作类型 | 从零写代码 | 排查环境问题 | 功能开发+深度调试 | 方案审计+功能补全+Bug修复 |
+| Bug 数量 | 4 个运行时错误 | 3 个环境问题 | 7+ 个逻辑 Bug | 7 个真实 Bug |
+| 调试深度 | 浅 | 中 | 深（端到端追踪） | 深（全栈+回归） |
+| 关键技能 | 按方案执行 | 环境排查 | 数据流追踪 | 架构理解+回归防御 |
+| 用户参与度 | 低 | 中 | 高 | 最高（持续测试反馈） |
+| 典型指令 | "继续下一阶段" | "怎么验证区别" | 展示截图报 Bug | 截图+逻辑分析+验收 |
+
+**最大教训**：本次会话的 7 个 Bug 中，有 2 个是"修 Bug 引入的新 Bug"（Bug 5 回归、Bug 7-A JSON 溢出）。随着项目复杂度增加，每次修改都要考虑对现有功能的影响——修复 X 时要检查 Y 和 Z 是否被波及。
+
+> **一句话记住**：功能开发是"从无到有"，优化是"从有到好"，而"从好到稳"需要的不是更多代码，而是更严格的条件判断和更全面的回归测试。
+
+---
+
+## 七、项目当前状态
+
+### Git 提交记录（完整）
+
+```
+2ea51fd  feat: 会话智能命名 + 意图识别上下文感知
+1698311  fix: 行程方案刷新丢失 + TRIP_PLAN 多轮对话上下文补全
+7fcefae  fix: 批量扩充URL修复 + 暗色模式持久化与重启检测
+a349483  feat: UI 细节补全 + 批量扩充 + 知识纠正闭环
+4955de9  feat(P3): 行程风格对比 + 知识库自动调研
+7a94288  P2 体验优化：天气 · 问候 · 界面美化 · 预算估算 · 旅行清单
+530d77b  P1 可靠性优化：错误恢复 + 消息右键菜单 + 行程导出 + 一键启动脚本
+88efabb  P0 核心优化：KNOWLEDGE兜底 + TripCard结构化 + 偏好管理 + 会话系统
+328c1a6  文档更新：补充阶段5-12调试记录，重命名去除日期后缀
+89cf729  对话上下文与记忆连贯性：多轮对话支持 + 智能摘要压缩
+2dd44b9  阶段十二：联调优化、测试与部署（最终交付）
+f38fd1c  阶段十一：语音交互（Web Speech API 语音输入 + TTS 播报）
+a092fd0  阶段十：安全系统完善（三级拦截 + 输出过滤 + 频率限制）
+d76a46d  阶段九：前端-后端业务大串联（WebSocket + 消息类型分支 + 卡片渲染）
+b8bf6b0  阶段八：主动服务（WebSocket 推送 + APScheduler 定时提醒）
+ae19d38  阶段七：RAG 景点知识服务（ChromaDB 向量检索 + LLM 导游式回答）
+b8150bf  阶段六：行程规划服务（LLM 生成 + POI/天气/偏好融合 + SQLite 持久化）
+d04b45b  阶段五：外部 API 集成（高德地图 + 天气查询）
+e133e10  补充 Phase 0/1/2 详细记录，完善项目全过程文档
+e4fbfc2  阶段四文档：项目进展记录与 ChromaDB 环境问题排查全过程
+23d33d9  阶段四：记忆系统升级为 ChromaDB + SQLite 双写
+c7633da  修复 requirements.txt 中文注释导致 pip GBK 解码失败
+3fb08d6  阶段四：Hermes 记忆系统（纯 SQLite 实现）
+4c316a4  修复阶段三意图识别管道三个运行时错误
+14a38be  阶段三：三层意图识别管道
+0d9219e  阶段二：后端 API 网关与数据库初始化
+573a8a4  阶段一：前端对话界面基础
+5843d94  阶段零：搭建项目骨架，迁移核心服务
+```
+
+### 已完成模块（最终）
+
+| 层级 | 模块 | 状态 |
+|------|------|------|
+| 前端 | Vue 3 + Vite + TypeScript + Tailwind CSS + Pinia + Axios | ✅ |
+| 前端 | 聊天界面（ChatContainer / MessageBubble / ChatInput / TripCard / SessionSidebar / BatchExpandModal） | ✅ |
+| 前端 | 语音输入 + TTS 播报 | ✅ |
+| 前端 | WebSocket 实时连接 + 主动消息推送 | ✅ |
+| 前端 | 暗色模式（localStorage 持久化 + 后端重启检测） | ✅ |
+| 前端 | 会话管理（创建 / 切换 / 重命名 / 删除 / 智能命名） | ✅ |
+| 前端 | 批量扩充知识库（SSE 流式进度） | ✅ |
+| 前端 | 行程方案结构化展示 + 风格切换 + 刷新保持 | ✅ |
+| 后端 | FastAPI + CORS + 路由体系 | ✅ |
+| 后端 | SQLite 数据库（6 张表，含 metadata 列） | ✅ |
+| 后端 | 三层意图识别（安全→正则→AI）+ 正则预拦截 + 上下文感知 | ✅ |
+| 后端 | 天气 API / 地图 API / RAG 知识检索 | ✅ |
+| 后端 | 行程规划服务 + 风格对比 + 多轮上下文补全 | ✅ |
+| 后端 | 安全系统（三级拦截 + 输出过滤 + 频率限制） | ✅ |
+| 后端 | 记忆系统（SQLite + ChromaDB 双写） | ✅ |
+| 后端 | 对话上下文（历史加载 + 摘要压缩） | ✅ |
+| 后端 | WebSocket 推送 + APScheduler 定时提醒 | ✅ |
+| 后端 | 知识库自动调研 + 批量扩充 + 用户纠正闭环 | ✅ |
+| 后端 | 会话智能命名（首次消息命名 + 行程方案更新） | ✅ |
+| 后端 | 启动时间戳 API（前端暗色模式重启检测） | ✅ |
