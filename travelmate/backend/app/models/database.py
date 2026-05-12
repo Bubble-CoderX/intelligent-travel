@@ -54,6 +54,7 @@ def init_db() -> None:
             session_id TEXT UNIQUE,
             device_id TEXT,
             title TEXT,
+            greeted INTEGER DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );

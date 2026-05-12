@@ -1,1 +1,18 @@
 @import "tailwindcss";
+@variant dark (&:where(.dark, .dark *));
+
+/* 滚动条美化 */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #d6d3d1; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #a8a29e; }
+.dark ::-webkit-scrollbar-thumb { background: #57534e; }
+.dark ::-webkit-scrollbar-thumb:hover { background: #78716c; }
+
+/* prose 定制 */
+.prose h1, .prose h2, .prose h3 { color: #44403c; }
+.prose a { color: #38bdf8; }
+.prose strong { color: #44403c; }
+.dark .prose { color: #d6d3d1; }
+.dark .prose h1, .dark .prose h2, .dark .prose h3 { color: #e7e5e4; }
+.dark .prose strong { color: #e7e5e4; }

@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
 from app.models.database import get_db
+from app.services.checklist_service import generate_checklist
 from app.services.export_service import itinerary_to_pdf_bytes, itinerary_to_markdown
 from app.models.schemas import Itinerary, TripDetailResponse
 
@@ -110,3 +111,21 @@ async def export_trip(trip_id: str, format: str = "json"):
 
     # 默认返回 JSON
     return detail.model_dump()
+
+
+@router.get("/{trip_id}/checklist")
+async def get_trip_checklist(trip_id: str):
+    """为指定行程生成旅行准备清单。"""
+    conn = get_db()
+    row = _find_trip_row(conn, trip_id)
+    conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="行程不存在")
+    try:
+        itinerary = json.loads(row["plan_json"])
+    except Exception:
+        raise HTTPException(status_code=500, detail="行程数据损坏")
+    destination = itinerary.get("destination", "")
+    days = itinerary.get("days", 1) if isinstance(itinerary.get("days"), int) else len(itinerary.get("days", [])) or 1
+    checklist = await generate_checklist(destination, days)
+    return {"trip_id": trip_id, "checklist": checklist}

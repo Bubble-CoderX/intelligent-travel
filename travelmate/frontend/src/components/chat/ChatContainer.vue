@@ -1,16 +1,50 @@
 <script setup lang="ts">
-import { ref, nextTick, watch, onMounted } from 'vue'
+import { ref, nextTick, watch, onMounted, onUnmounted } from 'vue'
 import { useChatStore } from '@/stores/chat'
+import api from '@/api/client'
+import { getDeviceId } from '@/utils/device'
 import MessageBubble from './MessageBubble.vue'
 import ChatInput from './ChatInput.vue'
 import TripCard from './TripCard.vue'
 import SessionSidebar from './SessionSidebar.vue'
 import PreferencesDrawer from '@/components/PreferencesDrawer.vue'
 
+const props = defineProps<{ dark?: boolean }>()
 const store = useChatStore()
 const listRef = ref<HTMLDivElement>()
 const showPrefs = ref(false)
 const showSidebar = ref(true)
+
+// ── 天气 ────────────────────────────────────────────
+const weather = ref<{ city: string; weather: string; temp: string } | null>(null)
+let weatherTimer: ReturnType<typeof setInterval> | null = null
+
+function weatherEmoji(w: string): string {
+  if (/晴/.test(w)) return '☀️'
+  if (/多云|阴/.test(w)) return '⛅'
+  if (/雨|雷/.test(w)) return '🌧️'
+  if (/雪/.test(w)) return '❄️'
+  return '🌤️'
+}
+
+async function fetchWeather() {
+  try {
+    let lat: number | undefined, lng: number | undefined
+    if (navigator.geolocation) {
+      try {
+        const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 })
+        })
+        lat = pos.coords.latitude
+        lng = pos.coords.longitude
+      } catch { /* 用户拒绝或超时，走 IP 兜底 */ }
+    }
+    const params: Record<string, any> = { device_id: getDeviceId() }
+    if (lat !== undefined) { params.lat = lat; params.lng = lng }
+    const res = await api.get('/weather/current', { params })
+    if (res.data.status === 'ok') weather.value = res.data
+  } catch { /* 静默失败，不干扰正常使用 */ }
+}
 
 function scrollToBottom() {
   nextTick(() => {
@@ -23,12 +57,55 @@ function scrollToBottom() {
 watch(() => store.messages.length, scrollToBottom)
 watch(() => store.isLoading, scrollToBottom)
 
+// isLoading 从 true→false 表示会话切换的消息加载完毕
+let prevLoading = false
+let switchedSessionId = ''
+
+watch(() => store.isLoading, (loading) => {
+  if (prevLoading && !loading) {
+    // 加载完毕，如果是切换会话且有消息则触发问候
+    if (switchedSessionId && store.messages.length > 0) {
+      fetchGreeting()
+    }
+    switchedSessionId = ''
+  }
+  prevLoading = loading
+})
+
+// 记录切换会话时的 sessionId
+watch(() => store.sessionId, (newId) => {
+  switchedSessionId = newId
+})
+
 function handleSend(content: string) {
   store.sendMessage(content)
 }
 
 function isTripCard(msg: { type: string }) {
   return msg.type === 'card'
+}
+
+/** 切换到有消息的会话时触发问候（持久化到后端） */
+async function fetchGreeting() {
+  if (store.messages.length === 0) return
+
+  try {
+    const res = await api.post('/proactive/greet-session', {
+      device_id: getDeviceId(),
+      session_id: store.sessionId,
+    })
+    if (res.data.status === 'ok') {
+      store.addMessage({
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: res.data.greeting,
+        timestamp: Date.now(),
+        type: 'proactive',
+        metadata: { proactive_type: 'greeting' },
+      })
+    }
+    // status === 'skipped' 表示已有问候，不重复添加
+  } catch { /* 问候失败不阻塞 */ }
 }
 
 onMounted(async () => {
@@ -38,44 +115,77 @@ onMounted(async () => {
   } else {
     await store.createSession()
   }
+  fetchWeather()
+  weatherTimer = setInterval(fetchWeather, 30 * 60 * 1000)
+})
+
+onUnmounted(() => {
+  if (weatherTimer) clearInterval(weatherTimer)
 })
 </script>
 
 <template>
-  <div class="flex h-screen bg-gray-50">
+  <div class="flex h-screen" :class="props.dark ? 'bg-stone-900' : 'bg-stone-50'">
     <!-- 左侧会话栏 -->
     <SessionSidebar v-show="showSidebar" />
 
     <!-- 主聊天区域 -->
     <div class="flex flex-1 flex-col min-w-0">
-      <header class="flex items-center justify-between border-b bg-white px-4 py-3 shadow-sm sm:px-6 sm:py-4">
+      <header class="flex items-center justify-between border-b bg-white px-4 py-3 shadow-sm sm:px-6 sm:py-4 dark:border-stone-700 dark:bg-stone-800">
         <div class="flex items-center gap-2">
-          <!-- 侧边栏开关 -->
           <button
-            class="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+            class="rounded-lg p-1.5 text-stone-400 hover:bg-stone-100 hover:text-stone-600 transition-colors dark:hover:bg-stone-700 dark:hover:text-stone-300"
             @click="showSidebar = !showSidebar"
           >
             <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
             </svg>
           </button>
-          <h1 class="text-base font-semibold text-gray-800 sm:text-lg">TravelMate</h1>
-          <span class="ml-1 text-xs text-gray-400 sm:text-sm">AI 智游伴</span>
+          <h1 class="text-base font-semibold text-stone-800 sm:text-lg dark:text-stone-100">TravelMate</h1>
+          <span class="ml-1 text-xs text-stone-400 sm:text-sm dark:text-stone-500">AI 智游伴</span>
         </div>
-        <button
-          class="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-          @click="showPrefs = true"
-        >
-          <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-          </svg>
-        </button>
+        <div class="flex items-center gap-3">
+          <div v-if="weather" class="flex items-center gap-1 text-sm text-stone-500 dark:text-stone-400">
+            <span>{{ weatherEmoji(weather.weather) }}</span>
+            <span class="hidden sm:inline">{{ weather.city }}</span>
+            <span class="font-medium text-stone-700 dark:text-stone-200">{{ weather.temp }}°</span>
+          </div>
+          <button
+            class="rounded-lg p-2 text-stone-400 hover:bg-stone-100 hover:text-stone-600 transition-colors dark:hover:bg-stone-700 dark:hover:text-stone-300"
+            @click="showPrefs = true"
+          >
+            <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+          </button>
+        </div>
       </header>
 
-      <div ref="listRef" class="flex-1 space-y-3 overflow-y-auto px-3 py-4 sm:space-y-4 sm:px-4 sm:py-6">
-        <div v-if="store.messages.length === 0" class="flex h-full items-center justify-center">
-          <p class="text-gray-400">你好！我是 TravelMate，告诉我你想去哪里旅行吧 ✈</p>
+      <div ref="listRef" class="flex-1 space-y-4 overflow-y-auto px-3 py-4 sm:space-y-5 sm:px-4 sm:py-6">
+        <!-- 欢迎页 -->
+        <div v-if="store.messages.length === 0" class="flex h-full flex-col items-center justify-center px-4">
+          <div class="mb-6 text-5xl">🗺️</div>
+          <h2 class="mb-2 text-xl font-semibold text-stone-700 dark:text-stone-200">TravelMate</h2>
+          <p class="mb-8 text-sm text-stone-400 dark:text-stone-500">你的 AI 旅行伙伴</p>
+          <p class="mb-10 text-center text-sm text-stone-500 dark:text-stone-400">
+            我可以帮你规划行程、查天气、推荐景点、讲解历史文化～
+          </p>
+          <div class="grid grid-cols-3 gap-3">
+            <button
+              class="rounded-xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-600 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md dark:border-stone-700 dark:bg-stone-800 dark:text-stone-300"
+              @click="handleSend('帮我规划行程')"
+            >🗺️ 规划行程</button>
+            <button
+              class="rounded-xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-600 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md dark:border-stone-700 dark:bg-stone-800 dark:text-stone-300"
+              @click="handleSend('今天天气怎么样')"
+            >🌤️ 查天气</button>
+            <button
+              class="rounded-xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-600 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md dark:border-stone-700 dark:bg-stone-800 dark:text-stone-300"
+              @click="handleSend('推荐一些热门景点')"
+            >🏯 景点推荐</button>
+          </div>
+          <p class="mt-8 text-xs text-stone-300 dark:text-stone-600">或直接输入你想去的地方...</p>
         </div>
 
         <template v-for="msg in store.messages" :key="msg.id">
@@ -89,11 +199,11 @@ onMounted(async () => {
         </template>
 
         <div v-if="store.isLoading" class="flex justify-start">
-          <div class="rounded-2xl rounded-bl-md bg-white px-4 py-3 shadow-sm border border-gray-100">
+          <div class="rounded-2xl rounded-bl-md bg-white px-4 py-3 shadow-sm border border-stone-100 dark:bg-stone-800 dark:border-stone-700">
             <div class="flex gap-1">
-              <span class="h-2 w-2 animate-bounce rounded-full bg-gray-400 [animation-delay:-0.3s]" />
-              <span class="h-2 w-2 animate-bounce rounded-full bg-gray-400 [animation-delay:-0.15s]" />
-              <span class="h-2 w-2 animate-bounce rounded-full bg-gray-400" />
+              <span class="h-2 w-2 animate-bounce rounded-full bg-amber-400 [animation-delay:-0.3s]" />
+              <span class="h-2 w-2 animate-bounce rounded-full bg-amber-400 [animation-delay:-0.15s]" />
+              <span class="h-2 w-2 animate-bounce rounded-full bg-amber-400" />
             </div>
           </div>
         </div>

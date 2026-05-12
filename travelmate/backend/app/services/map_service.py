@@ -220,6 +220,22 @@ def estimate_route(
     return result
 
 
+def reverse_geocode(location: str) -> dict[str, Any] | None:
+    """经纬度 → 城市名（location 格式："lng,lat"）。"""
+    _ensure_amap_api_key()
+    with _build_client() as client:
+        resp = client.get(
+            f"{AMAP_BASE_URL}/geocode/regeo",
+            params={"key": AMAP_API_KEY, "location": location},
+        )
+        data = resp.json()
+        if data.get("status") == "1":
+            comp = data["regeocode"]["addressComponent"]
+            city = comp.get("city") or comp.get("province", "")
+            return {"city": city}
+    return None
+
+
 def _pick_best_place(keyword: str, city: str | None = None) -> dict[str, Any] | None:
     """优先从 POI 搜索里选取第一条结果。"""
     results = search_places(keyword=keyword, city=city, page_size=1)

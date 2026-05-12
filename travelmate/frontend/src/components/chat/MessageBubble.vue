@@ -20,6 +20,7 @@ const isUser = computed(() => props.message.role === 'user')
 const isSystem = computed(() => props.message.role === 'system')
 const isAssistant = computed(() => props.message.role === 'assistant')
 const isProactive = computed(() => props.message.type === 'proactive')
+const isGreeting = computed(() => props.message.type === 'proactive' && props.message.metadata?.proactive_type === 'greeting')
 const canSpeak = computed(() => !isUser.value && !isSystem.value && ttsSupported.value)
 const isFailed = computed(() => !!props.message.failed)
 
@@ -103,12 +104,21 @@ function speakMsg() {
       {{ message.content }}
     </div>
 
+    <!-- 问候消息（特殊样式） -->
+    <div
+      v-else-if="isGreeting"
+      class="max-w-[90%] rounded-2xl rounded-bl-md bg-gradient-to-br from-amber-50 to-orange-50 px-4 py-3.5 text-sm leading-relaxed text-stone-700 shadow-sm sm:max-w-[75%] sm:px-5 sm:py-4 dark:from-amber-950 dark:to-orange-950 dark:text-stone-200 dark:border dark:border-amber-800"
+    >
+      <span class="mb-2 inline-block text-base">👋</span>
+      <div class="prose prose-sm max-w-none prose-p:my-1" v-html="renderedContent" />
+    </div>
+
     <!-- 主动消息 -->
     <div
       v-else-if="isProactive"
-      class="max-w-[90%] rounded-2xl rounded-bl-md border border-amber-100 bg-amber-50 px-3 py-2.5 text-sm leading-relaxed text-gray-800 shadow-sm sm:max-w-[75%] sm:px-4 sm:py-3"
+      class="max-w-[90%] rounded-2xl rounded-bl-md border border-amber-100 bg-amber-50 px-3 py-2.5 text-sm leading-relaxed text-stone-700 shadow-sm sm:max-w-[75%] sm:px-4 sm:py-3 dark:border-amber-800 dark:bg-amber-950 dark:text-stone-200"
     >
-      <div class="mb-1 text-xs font-medium text-amber-600">{{ proactiveLabel }}</div>
+      <div class="mb-1 text-xs font-medium text-amber-600 dark:text-amber-400">{{ proactiveLabel }}</div>
       <div class="prose prose-sm max-w-none prose-p:my-1 prose-ul:my-1 prose-li:my-0" v-html="renderedContent" />
     </div>
 
@@ -118,19 +128,19 @@ function speakMsg() {
       class="max-w-[90%] rounded-2xl px-3 py-2.5 text-sm leading-relaxed sm:max-w-[75%] sm:px-4 sm:py-3"
       :class="
         isFailed
-          ? 'border border-red-200 bg-red-50 text-red-700 rounded-bl-md'
+          ? 'border border-red-200 bg-red-50 text-red-700 rounded-bl-md dark:bg-red-950 dark:border-red-800 dark:text-red-300'
           : isUser
-            ? 'bg-blue-600 text-white rounded-br-md'
-            : 'bg-white text-gray-800 shadow-sm border border-gray-100 rounded-bl-md'
+            ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-white rounded-br-md dark:from-amber-600 dark:to-amber-700'
+            : 'bg-white text-stone-800 shadow-sm border border-stone-100 rounded-bl-md dark:bg-stone-800 dark:text-stone-100 dark:border-stone-700'
       "
     >
       <!-- 失败状态 -->
       <template v-if="isFailed">
         <div class="whitespace-pre-wrap">{{ message.content }}</div>
         <div class="mt-2 flex items-center gap-2">
-          <span class="text-xs text-red-400">{{ errorLabel }}</span>
+          <span class="text-xs text-red-400 dark:text-red-300">{{ errorLabel }}</span>
           <button
-            class="rounded bg-red-100 px-2.5 py-1 text-xs font-medium text-red-600 transition-colors hover:bg-red-200"
+            class="rounded bg-red-100 px-2.5 py-1 text-xs font-medium text-red-600 transition-colors hover:bg-red-200 dark:bg-red-900 dark:text-red-300 dark:hover:bg-red-800"
             @click="store.retryMessage(message.id)"
           >
             重新发送
@@ -146,13 +156,13 @@ function speakMsg() {
         <div class="prose prose-sm max-w-none prose-p:my-1 prose-ul:my-1 prose-li:my-0" v-html="renderedContent" />
         <div
           v-if="safetyWarning"
-          class="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700"
+          class="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300"
         >
           {{ safetyWarning }}
         </div>
         <button
           v-if="canSpeak"
-          class="mt-2 flex items-center gap-1 text-xs text-gray-400 transition-colors hover:text-blue-500"
+          class="mt-2 flex items-center gap-1 text-xs text-stone-400 transition-colors hover:text-amber-500 dark:text-stone-500 dark:hover:text-amber-400"
           @click="toggleSpeak"
         >
           <svg v-if="!isSpeaking" xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

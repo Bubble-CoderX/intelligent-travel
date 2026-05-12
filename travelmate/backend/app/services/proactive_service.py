@@ -139,6 +139,110 @@ async def send_arrival_greeting(device_id: str, spot_name: str, city: str = "") 
     return greeting
 
 
+# ── 会话启动问候 ──────────────────────────────────────────────
+
+GREETING_PROMPT = """你是「AI智游伴」的个性化问候生成器。根据以下上下文生成一条温暖的主动开场白。
+
+## 基础信息
+- 时间：{time_of_day}
+- 天气：{weather}
+
+## 用户画像
+- 是新用户：{is_new_user}
+- 旅行偏好：{preferences}
+- 最近行程：{recent_trips}
+
+## 问候模板（按用户类型选择）
+
+### 如果是新用户（无偏好、无行程）：
+1. 时间问候 + 所在地天气
+2. 一句话介绍自己能做什么（规划行程、查天气、推荐景点、讲解故事）
+3. 一个引导性问题，例如"最近有想去的地方吗？"
+
+### 如果是回访用户（有偏好或行程）：
+1. 时间问候 + 所在地天气
+2. 提到 1-2 条用户偏好（自然融入，不要生硬列举）
+3. 如果有未完成的行程规划，询问是否继续
+4. 一个开放式的服务邀请
+
+## 要求
+- 语气温暖自然，像老朋友在聊天，不要像机器人客服
+- 总长度 2-4 句话，不要太长
+- 每次生成的问候语要有变化，不要每次一样
+- 不要用"尊贵的用户""您好"等客服腔
+- 天气信息自然地融入，不要单独报天气数据
+- 直接输出问候语，不要加前缀如"问候："
+"""
+
+
+def _time_greeting() -> str:
+    h = datetime.now().hour
+    if h < 6: return "深夜好"
+    if h < 12: return "早上好"
+    if h < 14: return "中午好"
+    if h < 18: return "下午好"
+    return "晚上好"
+
+
+async def generate_greeting(device_id: str) -> dict[str, Any]:
+    """生成个性化开场问候。返回 {"greeting": "...", "is_new_user": bool}"""
+    from app.services.trip_service import query_trip_plans
+
+    # 收集上下文
+    prefs = get_all_preferences(device_id)
+    recent_trips = query_trip_plans(device_id, limit=2)
+
+    # 判断用户类型
+    total_prefs = len(prefs)
+    total_trips = len(recent_trips)
+    is_new = (total_prefs == 0 and total_trips == 0)
+
+    # 天气信息
+    weather_text = "未知"
+    city = None
+    for p in prefs:
+        if p.get("category") == "location" and p.get("key") == "home_city":
+            city = p.get("value")
+            break
+    if city:
+        try:
+            import asyncio
+            data = await asyncio.to_thread(get_weather_forecast, city)
+            today = data.get("days", [{}])[0] if data.get("days") else {}
+            weather_text = f"{city} {today.get('day_weather', '')} {today.get('day_temp', '')}°C"
+        except Exception:
+            weather_text = city if city else "未知"
+    else:
+        try:
+            import asyncio
+            data = await asyncio.to_thread(get_weather_forecast, "深圳")
+            today = data.get("days", [{}])[0] if data.get("days") else {}
+            weather_text = f"深圳 {today.get('day_weather', '')} {today.get('day_temp', '')}°C"
+        except Exception:
+            weather_text = "（天气未知）"
+
+    # 格式化偏好和行程
+    pref_text = "、".join(f"{p['key']}={p['value']}" for p in prefs[:5]) if prefs else "无"
+    trip_text = " | ".join(t.get("destination", "") for t in recent_trips[:2]) if recent_trips else "无"
+
+    prompt = GREETING_PROMPT.format(
+        time_of_day=_time_greeting(),
+        weather=weather_text,
+        is_new_user=str(is_new),
+        preferences=pref_text,
+        recent_trips=trip_text,
+    )
+
+    greeting = await call_llm(
+        messages=[{"role": "user", "content": "生成一条个性化开场问候"}],
+        system_prompt=prompt,
+        temperature=0.8,
+        max_tokens=300,
+    )
+
+    return {"greeting": greeting, "is_new_user": is_new}
+
+
 # ── 调度器管理 ──────────────────────────────────────────────
 
 def start_scheduler() -> None:

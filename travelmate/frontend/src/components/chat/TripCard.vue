@@ -77,6 +77,19 @@ interface TripPlan {
 const activeTab = ref<string>('overview')
 const bottomPanel = ref<'transport' | 'food' | 'accommodation' | null>(null)
 const showExportMenu = ref(false)
+const checklist = ref<{ categories: { name: string; icon: string; items: string[] }[] } | null>(null)
+const loadingChecklist = ref(false)
+
+async function genChecklist() {
+  if (!props.tripPlan?.trip_id || loadingChecklist.value) return
+  loadingChecklist.value = true
+  try {
+    const res = await fetch(`http://localhost:8000/trip/${props.tripPlan.trip_id}/checklist`, { signal: AbortSignal.timeout(15000) })
+    const data = await res.json()
+    checklist.value = data.checklist
+  } catch { /* 静默失败 */ }
+  finally { loadingChecklist.value = false }
+}
 
 function exportJSON() {
   if (!props.tripPlan?.trip_id) return
@@ -206,6 +219,28 @@ const mealEmoji = (type: string) => {
       </div>
       <div v-if="safetyWarning" class="mt-3 rounded-lg bg-red-50/90 px-3 py-2 text-xs font-medium text-red-700">
         ⚠️ {{ safetyWarning }}
+      </div>
+      <!-- 清单按钮 -->
+      <button
+        v-if="!checklist"
+        :disabled="loadingChecklist"
+        class="mt-3 inline-flex items-center gap-1 rounded-lg bg-white/20 px-3 py-1.5 text-xs text-white transition-colors hover:bg-white/30 disabled:opacity-50"
+        @click.stop="genChecklist"
+      >
+        {{ loadingChecklist ? '生成中...' : '📋 生成准备清单' }}
+      </button>
+    </div>
+
+    <!-- 准备清单 -->
+    <div v-if="checklist" class="border-b border-stone-100 px-5 py-4">
+      <h4 class="mb-3 text-sm font-semibold text-stone-700">📋 旅行准备清单</h4>
+      <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <div v-for="(cat, ci) in checklist.categories" :key="ci" class="rounded-lg bg-stone-50 p-3">
+          <h5 class="mb-1.5 text-xs font-medium text-stone-600">{{ cat.icon }} {{ cat.name }}</h5>
+          <ul class="space-y-0.5">
+            <li v-for="(item, ii) in cat.items" :key="ii" class="text-[11px] text-stone-500">• {{ item }}</li>
+          </ul>
+        </div>
       </div>
     </div>
 
