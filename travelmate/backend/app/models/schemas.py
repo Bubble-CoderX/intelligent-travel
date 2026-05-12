@@ -80,6 +80,7 @@ class SpotItem(BaseModel):
     start_time: str | None = Field(default=None, description="开始时间")
     end_time: str | None = Field(default=None, description="结束时间")
     description: str | None = Field(default=None, description="景点安排说明")
+    tips: str | None = Field(default=None, description="实用小贴士")
     estimated_cost: float = Field(default=0.0, ge=0, description="预估花费")
     location: str | None = Field(default=None, description="景点位置描述")
     image_url: str | None = Field(default=None, description="景点图片地址")
@@ -154,7 +155,10 @@ class Itinerary(BaseModel):
     summary: str = Field(..., description="整趟行程的概述")
     days: list[DayPlan] = Field(default_factory=list, description="逐日行程")
     estimated_budget: float = Field(default=0.0, ge=0, description="预算总计")
-    budget_breakdown: BudgetBreakdown = Field(..., description="预算明细")
+    budget_breakdown: BudgetBreakdown | None = Field(default=None, description="预算明细")
+    food_summary: str | None = Field(default=None, description="全程美食概览")
+    transport_summary: str | None = Field(default=None, description="全程交通概览")
+    accommodation_summary: str | None = Field(default=None, description="住宿总览")
     tips: list[str] = Field(default_factory=list, description="旅行建议")
     source_notes: list[str] = Field(
         default_factory=list,

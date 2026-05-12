@@ -76,7 +76,7 @@ def _get_user_preferences(device_id: str) -> str:
     return "\n".join(f"- {p['category']}/{p['key']}: {p['value']}" for p in prefs)
 
 
-async def route_intent(user_message: str, device_id: str) -> dict:
+async def route_intent(user_message: str, device_id: str, session_id: str | None = None) -> dict:
     """
     完整意图识别管道：
     输入安全检查 → 第一层正则 → 第二层 AI → 输出安全检查 → 返回结果
@@ -179,7 +179,9 @@ async def route_intent(user_message: str, device_id: str) -> dict:
             else:
                 try:
                     result = await generate_trip_plan(device_id, destination, int(trip_days))
-                    reply = result["itinerary"]
+                    reply = result["summary"]
+                    # 保存结构化数据到 extracted，供 chat.py 写入 metadata
+                    extracted["_trip_plan"] = result.get("itinerary_json")
                     if safety.get("level") == "WARN" and safety.get("warning"):
                         reply = f"> {safety['warning']}\n\n{reply}"
                 except Exception as exc:
@@ -222,7 +224,7 @@ async def route_intent(user_message: str, device_id: str) -> dict:
         keyword = spot or city
         # 无关键词时从对话历史中补全（代词消解）
         if not keyword:
-            history = await get_recent_history(device_id)
+            history = await get_recent_history(device_id, session_id=session_id)
             from app.services.llm_client import call_llm as _llm
             resolve_prompt = "从以下对话历史中提取最近提到的景点或城市名称，只返回名称，没有则返回\"无\"。"
             hist_text = "\n".join(f"{m['role']}: {m['content']}" for m in history) if history else "（无历史）"
@@ -248,7 +250,7 @@ async def route_intent(user_message: str, device_id: str) -> dict:
             "你是「AI智游伴」，友好专业的旅行助手。简洁温暖，1-3句话。"
             "前面的消息是你们的对话历史，你必须基于历史回答。如果用户问是否记得某信息，先检查历史中有没有提到。"
         )
-        history = await get_recent_history(device_id)
+        history = await get_recent_history(device_id, session_id=session_id)
         messages = [{"role": m["role"], "content": m["content"]} for m in history]
         messages.append({"role": "user", "content": user_message})
         reply = await call_llm(

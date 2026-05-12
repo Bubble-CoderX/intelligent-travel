@@ -26,46 +26,62 @@ def save_message(device_id: str, session_id: str, role: str, content: str, inten
     conn.close()
 
 
-async def get_recent_history(device_id: str, limit: int = MAX_HISTORY) -> list[dict[str, str]]:
+async def get_recent_history(
+    device_id: str,
+    session_id: str | None = None,
+    limit: int = MAX_HISTORY,
+) -> list[dict[str, str]]:
     """
-    获取设备对话历史。
+    获取设备对话历史（按 session_id 隔离）。
     - 消息数 ≤ SUMMARY_THRESHOLD：返回全部（最多 limit 条）
     - 消息数 > SUMMARY_THRESHOLD：旧消息摘要 + 最近 RECENT_LIMIT 条原文
     """
     conn = get_db()
+
+    if session_id:
+        where = "device_id = ? AND session_id = ? AND role != 'system'"
+        params_count: tuple = (device_id, session_id)
+        params_list: tuple = (device_id, session_id, limit)
+    else:
+        where = "device_id = ? AND role != 'system'"
+        params_count = (device_id,)
+        params_list = (device_id, limit)
+
     total = conn.execute(
-        "SELECT COUNT(*) FROM conversations WHERE device_id = ? AND role != 'system'",
-        (device_id,),
+        f"SELECT COUNT(*) FROM conversations WHERE {where}", params_count
     ).fetchone()[0]
 
     # 消息不多，直接返回
     if total <= SUMMARY_THRESHOLD:
         rows = conn.execute(
-            "SELECT role, content FROM conversations WHERE device_id = ? "
-            "AND role != 'system' ORDER BY id DESC LIMIT ?",
-            (device_id, limit),
+            f"SELECT role, content FROM conversations WHERE {where} "
+            "ORDER BY id DESC LIMIT ?",
+            params_list,
         ).fetchall()
         conn.close()
         return [{"role": row["role"], "content": row["content"]} for row in reversed(rows)]
 
     # 取最近 RECENT_LIMIT 条原文
+    recent_params = params_list[:2] + (RECENT_LIMIT,) if session_id else (device_id, RECENT_LIMIT)
     recent_rows = conn.execute(
-        "SELECT role, content FROM conversations WHERE device_id = ? "
-        "AND role != 'system' ORDER BY id DESC LIMIT ?",
-        (device_id, RECENT_LIMIT),
+        f"SELECT role, content FROM conversations WHERE {where} "
+        "ORDER BY id DESC LIMIT ?",
+        recent_params,
     ).fetchall()
     recent = [{"role": row["role"], "content": row["content"]} for row in reversed(recent_rows)]
 
-    # 检查缓存：消息数变化 < 5 条时复用旧摘要
-    cached_count, cached_summary = _summary_cache.get(device_id, (0, ""))
+    # 缓存 key 包含 session_id 以隔离不同会话
+    cache_key = f"{device_id}:{session_id}" if session_id else device_id
+    cached_count, cached_summary = _summary_cache.get(cache_key, (0, ""))
     if abs(total - cached_count) < 5 and cached_summary:
         summary_text = cached_summary
     else:
         # 取旧消息用于摘要
+        older_params = params_count + (total - RECENT_LIMIT,)
         older_rows = conn.execute(
-            "SELECT role, content FROM conversations WHERE device_id = ? "
-            "AND role != 'system' ORDER BY id ASC LIMIT ?",
-            (device_id, total - RECENT_LIMIT),
+            f"SELECT role, content FROM conversations WHERE {where} "
+            "ORDER BY id ASC LIMIT ?",
+            older_params,
         ).fetchall()
         conn.close()
 
@@ -89,7 +105,7 @@ async def get_recent_history(device_id: str, limit: int = MAX_HISTORY) -> list[d
                 temperature=0.0,
                 max_tokens=200,
             )
-            _summary_cache[device_id] = (total, summary_text.strip())
+            _summary_cache[cache_key] = (total, summary_text.strip())
         except Exception as exc:
             logger.warning("摘要生成失败：%s", exc)
             summary_text = "（历史摘要生成失败）"

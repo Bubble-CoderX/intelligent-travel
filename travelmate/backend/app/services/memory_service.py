@@ -78,7 +78,7 @@ def get_all_preferences(device_id: str) -> list[dict]:
     try:
         conn = get_db()
         rows = conn.execute(
-            """SELECT category, key, value, confidence, source, updated_at
+            """SELECT id, category, key, value, confidence, source, updated_at
                FROM user_preferences
                WHERE device_id = ?
                ORDER BY updated_at DESC""",

@@ -3,11 +3,12 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import uuid
-from datetime import datetime
 from typing import Any
 
 from app.models.database import get_db
+from app.models.schemas import BudgetBreakdown, DayPlan, Itinerary, SpotItem, MealItem, TransportItem, HotelItem
 from app.services.llm_client import call_llm
 from app.services.map_service import search_places
 from app.services.memory_service import get_all_preferences
@@ -62,16 +63,37 @@ def _format_preferences_text(device_id: str) -> str:
     return "\n".join(lines)
 
 
+def _parse_trip_json(raw: str, destination: str) -> dict:
+    """解析 LLM 返回的 JSON，含容错处理。"""
+    # 尝试直接解析
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        pass
+
+    # 尝试从文本中提取 JSON 片段
+    match = re.search(r'\{.*\}', raw, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group())
+        except json.JSONDecodeError:
+            pass
+
+    # 完全无法解析 → 返回降级结果
+    logger.warning("LLM 返回无法解析为 JSON，使用降级行程")
+    raise ValueError(f"无法解析 LLM 返回的 JSON: {raw[:200]}...")
+
+
 def _save_trip_to_db(
-    device_id: str, destination: str, days: int, itinerary_text: str
+    device_id: str, destination: str, days: int, itinerary_json: str
 ) -> str:
-    """将生成的行程保存到 SQLite，返回 trip_id（格式 trip_{id}）。"""
+    """将生成的行程（JSON 字符串）保存到 SQLite，返回 trip_id。"""
     try:
         conn = get_db()
         cursor = conn.execute(
             """INSERT INTO trip_plans (device_id, destination, days, plan_json)
                VALUES (?, ?, ?, ?)""",
-            (device_id, destination, days, itinerary_text),
+            (device_id, destination, days, itinerary_json),
         )
         conn.commit()
         trip_id = f"trip_{cursor.lastrowid}"
@@ -88,7 +110,7 @@ async def generate_trip_plan(
 ) -> dict[str, Any]:
     """
     完整行程生成流程：
-    收集数据（POI + 天气 + 偏好）→ 组装 Prompt → 调用 LLM → 存储 → 返回
+    收集数据 → 组装 Prompt → 调用 LLM → 解析 JSON → Pydantic 校验 → 存储 → 返回
     """
     poi_text = _format_poi_text(destination)
     weather_text = _format_weather_text(destination)
@@ -102,20 +124,60 @@ async def generate_trip_plan(
         preferences_text=preferences_text,
     )
 
-    itinerary_text = await call_llm(
+    raw = await call_llm(
         messages=[{"role": "user", "content": f"请为我规划一份{destination}{days}天的旅行行程"}],
         system_prompt=prompt,
         temperature=0.7,
-        max_tokens=2000,
+        max_tokens=3000,
     )
 
-    trip_id = _save_trip_to_db(device_id, destination, days, itinerary_text)
+    # 解析 JSON
+    try:
+        plan_dict = _parse_trip_json(raw, destination)
+    except ValueError as exc:
+        logger.warning("行程 JSON 解析失败：%s", exc)
+        return {
+            "trip_id": "",
+            "destination": destination,
+            "days": days,
+            "summary": f"抱歉，生成{destination}行程时遇到了格式问题。请稍后再试。",
+            "itinerary_json": None,
+        }
+
+    # 注入 trip_id 和 destination
+    trip_id = f"trip_{uuid.uuid4().hex[:8]}"
+    plan_dict["trip_id"] = trip_id
+    plan_dict["destination"] = destination
+
+    # Pydantic 校验（自动补全缺失字段默认值）
+    try:
+        itinerary = Itinerary(**plan_dict)
+    except Exception as e:
+        logger.warning("Pydantic 校验失败：%s → 尝试部分修复", e)
+        # 尝试手动补全常见缺失字段
+        for key in ("trip_id", "destination", "summary"):
+            if key not in plan_dict:
+                plan_dict[key] = ""
+        plan_dict["trip_id"] = trip_id
+        plan_dict["destination"] = destination
+        if "days" not in plan_dict:
+            plan_dict["days"] = []
+        if "estimated_budget" not in plan_dict:
+            plan_dict["estimated_budget"] = 0
+        itinerary = Itinerary(**plan_dict)
+
+    # 存储
+    itinerary_json_str = json.dumps(
+        itinerary.model_dump(), ensure_ascii=False
+    )
+    _save_trip_to_db(device_id, destination, days, itinerary_json_str)
 
     return {
-        "trip_id": trip_id,
+        "trip_id": itinerary.trip_id,
         "destination": destination,
         "days": days,
-        "itinerary": itinerary_text,
+        "summary": itinerary.summary,
+        "itinerary_json": itinerary.model_dump(),
     }
 
 

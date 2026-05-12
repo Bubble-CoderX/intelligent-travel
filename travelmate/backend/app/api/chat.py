@@ -24,7 +24,7 @@ async def chat_endpoint(req: ChatRequest):
     session_id = req.session_id or "default"
 
     try:
-        result = await route_intent(req.message, req.device_id)
+        result = await route_intent(req.message, req.device_id, session_id=session_id)
     except Exception as exc:
         logger.exception("意图识别管道异常")
         return ChatResponse(
@@ -67,12 +67,17 @@ async def chat_endpoint(req: ChatRequest):
     if safety.get("level") in ("WARN", "URGENT") and safety.get("warning"):
         metadata["safety_warning"] = safety["warning"]
 
-    # 行程规划：把结构化数据也带上，方便前端渲染卡片
+    # 行程规划：传递结构化数据给前端 TripCard
     if intent == "TRIP_PLAN":
         extracted = result.get("extracted_data", {})
-        metadata["destination"] = extracted.get("destination", "")
-        metadata["days"] = extracted.get("days", 0)
-        metadata["budget"] = extracted.get("budget", 0)
+        trip_plan = extracted.get("_trip_plan")
+        if trip_plan:
+            metadata["trip_plan"] = trip_plan
+            metadata["destination"] = trip_plan.get("destination", "")
+            metadata["days"] = trip_plan.get("days", 0)
+        else:
+            metadata["destination"] = extracted.get("destination", "")
+            metadata["days"] = extracted.get("days", 0)
 
     save_message(req.device_id, session_id, "user", req.message, intent)
     save_message(req.device_id, session_id, "assistant", reply, intent)

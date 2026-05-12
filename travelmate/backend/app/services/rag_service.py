@@ -89,18 +89,57 @@ def retrieve_knowledge(query: str, spot_name: str | None = None, top_k: int = 5)
 
 
 async def query_knowledge(question: str, spot_name: str | None = None) -> str:
-    """完整 RAG 流程：检索知识 → 调用 LLM 生成导游式回答。"""
+    """完整 RAG 流程：检索知识 → 双层兜底 → 调用 LLM 生成导游式回答。
+
+    兜底策略：
+    1. 检索为空（知识库中无相关内容） → LLM 通用知识 + 诚实标注来源
+    2. 检索有结果但 spot_name 明确时无匹配 → 低置信度标记，LLM 自行判断
+    3. 正常情况 → 知识库 Context 注入，高质量导游回答
+    """
     retrieved = retrieve_knowledge(question, spot_name, top_k=5)
 
+    # 【兜底 1】检索为空 → LLM 通用知识，诚实告知
     if not retrieved:
-        return "暂时没有找到关于这个问题的知识，你可以换个方式问问看～"
+        fallback_prompt = (
+            "你是「AI智游伴」的景点讲解员。知识库中没有检索到与用户问题直接相关的资料。\n"
+            "请基于你的通用知识回答用户问题，语言生动有趣，像一位热情的导游。\n"
+            "在回答末尾添加一句说明：'以上信息基于通用知识整理，如需更详尽的当地攻略，可以告诉我来补充哦～'\n\n"
+            f"用户问题：{question}"
+        )
+        answer = await call_llm(
+            messages=[{"role": "user", "content": question}],
+            system_prompt=fallback_prompt,
+            temperature=0.7,
+            max_tokens=800,
+        )
+        return answer
 
     context = "\n\n".join(
         f"【{r['spot_name']}】{r['text']}" for r in retrieved
     )
 
-    prompt = KNOWLEDGE_QA_PROMPT.format(context=context, question=question)
+    # 【兜底 2】spot_name 明确但检索结果中无匹配 → 低置信度 Context
+    if spot_name:
+        matching_chunks = [r for r in retrieved if r["spot_name"] == spot_name]
+        if not matching_chunks:
+            low_conf_prompt = (
+                "你是「AI智游伴」的景点讲解员。\n"
+                "知识库中没有找到关于该景点的直接资料，以下检索到的是一般性旅行相关内容，仅供参考：\n\n"
+                f"{context}\n\n"
+                "请基于你的通用知识回答用户问题。如果检索内容中有相关的部分可以引用，没有则可以忽略。\n"
+                "语言保持生动有趣的导游风格。\n\n"
+                f"用户问题：{question}"
+            )
+            answer = await call_llm(
+                messages=[{"role": "user", "content": question}],
+                system_prompt=low_conf_prompt,
+                temperature=0.7,
+                max_tokens=800,
+            )
+            return answer
 
+    # 正常情况：有匹配的知识片段，高质量导游回答
+    prompt = KNOWLEDGE_QA_PROMPT.format(context=context, question=question)
     answer = await call_llm(
         messages=[{"role": "user", "content": question}],
         system_prompt=prompt,
