@@ -106,8 +106,8 @@ function handleStyleSwitchSelect(style: string) {
   store.sendMessage(content, false, undefined, style)
 }
 
-function isTripCard(msg: { type: string }) {
-  return msg.type === 'card'
+function isTripCard(msg: { type: string; role: string; metadata?: Record<string, unknown> }) {
+  return msg.type === 'card' && msg.role === 'assistant' && !!msg.metadata?.trip_plan
 }
 
 /** 切换到有消息的会话时触发问候（持久化到后端） */

@@ -15,12 +15,14 @@ SUMMARY_THRESHOLD = 30
 _summary_cache: dict[str, tuple[int, str]] = {}
 
 
-def save_message(device_id: str, session_id: str, role: str, content: str, intent: str = "") -> None:
-    """保存单条消息到对话历史。"""
+def save_message(device_id: str, session_id: str, role: str, content: str, intent: str = "", metadata: dict | None = None) -> None:
+    """保存单条消息到对话历史。metadata 会被序列化为 JSON 存储。"""
+    import json as _json
+    meta_json = _json.dumps(metadata, ensure_ascii=False) if metadata else None
     conn = get_db()
     conn.execute(
-        "INSERT INTO conversations (device_id, session_id, role, content, intent) VALUES (?, ?, ?, ?, ?)",
-        (device_id, session_id, role, content, intent),
+        "INSERT INTO conversations (device_id, session_id, role, content, intent, metadata) VALUES (?, ?, ?, ?, ?, ?)",
+        (device_id, session_id, role, content, intent, meta_json),
     )
     conn.commit()
     conn.close()

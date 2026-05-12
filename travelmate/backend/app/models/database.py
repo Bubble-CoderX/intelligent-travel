@@ -62,4 +62,12 @@ def init_db() -> None:
             ON conversations(device_id, session_id);
     """)
     conn.commit()
+
+    # 增量迁移：conversations 表补 metadata 列（已存在则忽略）
+    try:
+        conn.execute("ALTER TABLE conversations ADD COLUMN metadata TEXT")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass  # 列已存在
+
     conn.close()

@@ -81,7 +81,7 @@ async def chat_endpoint(req: ChatRequest):
         metadata["trip_style"] = req.trip_style or "default"
 
     save_message(req.device_id, session_id, "user", req.message, intent)
-    save_message(req.device_id, session_id, "assistant", reply, intent)
+    save_message(req.device_id, session_id, "assistant", reply, intent, metadata=metadata)
 
     return ChatResponse(
         reply=reply,

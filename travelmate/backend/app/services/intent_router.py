@@ -168,6 +168,23 @@ async def route_intent(user_message: str, device_id: str, session_id: str | None
     elif intent == "TRIP_PLAN":
         destination = extracted.get("destination", "")
         trip_days = extracted.get("days")
+
+        # 缺少目的地时，从对话历史中补全（代词消解："三天"→ 上文的"杭州"）
+        if not destination:
+            history = await get_recent_history(device_id, session_id=session_id)
+            resolve_prompt = (
+                "从以下对话历史中，提取用户最近提到的旅行目的地（城市或景点名），"
+                "只返回名称，没有则返回\"无\"。"
+            )
+            hist_text = "\n".join(f"{m['role']}: {m['content']}" for m in history) if history else "（无历史）"
+            resolved = await call_llm(
+                messages=[{"role": "user", "content": f"历史：{hist_text}\n当前：{user_message}"}],
+                system_prompt=resolve_prompt,
+                temperature=0.0,
+                max_tokens=50,
+            )
+            destination = resolved.strip() if resolved.strip() != "无" else ""
+
         if not destination:
             reply = "请问你想去哪里旅行呢？告诉我目的地和天数，我来帮你规划～"
         elif not trip_days:

@@ -140,23 +140,32 @@ async def rename_session(session_id: str, device_id: str, req: RenameSessionRequ
 @router.get("/{session_id}/messages")
 async def get_session_messages(session_id: str, device_id: str, limit: int = 100):
     """获取会话的消息历史（供前端切换会话时加载）。"""
+    import json as _json
+
     conn = get_db()
     rows = conn.execute(
-        "SELECT role, content, intent, created_at FROM conversations "
+        "SELECT role, content, intent, metadata, created_at FROM conversations "
         "WHERE device_id = ? AND session_id = ? AND role != 'system' "
         "ORDER BY id DESC LIMIT ?",
         (device_id, session_id, limit),
     ).fetchall()
     conn.close()
 
-    messages = [
-        {
+    messages = []
+    for r in reversed(rows):
+        meta = None
+        raw_meta = r["metadata"]
+        if raw_meta:
+            try:
+                meta = _json.loads(raw_meta)
+            except _json.JSONDecodeError:
+                pass
+        messages.append({
             "role": r["role"],
             "content": r["content"],
             "intent": r["intent"],
+            "metadata": meta,
             "created_at": r["created_at"],
-        }
-        for r in reversed(rows)
-    ]
+        })
 
     return {"session_id": session_id, "messages": messages, "total": len(messages)}

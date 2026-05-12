@@ -120,7 +120,8 @@ export const useChatStore = defineStore('chat', () => {
         role: m.role,
         content: m.content,
         timestamp: new Date(m.created_at).getTime(),
-        type: 'text',
+        type: m.intent === 'TRIP_PLAN' ? 'card' : 'text',
+        metadata: m.metadata ?? undefined,
       }))
     } catch {
       messages.value = []
