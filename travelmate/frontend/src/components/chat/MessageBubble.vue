@@ -52,7 +52,7 @@ function toggleSpeak() {
   }
 }
 
-// ── 右键菜单 ─────────────────────────────────────────
+// 右键菜单
 const showMenu = ref(false)
 const menuPos = ref({ x: 0, y: 0 })
 const copied = ref(false)
@@ -93,22 +93,22 @@ function speakMsg() {
 
 <template>
   <div
-    class="flex w-full msg-slide-in"
+    class="flex w-full msg-slide-in py-2"
     :class="isUser ? 'justify-end' : 'justify-start'"
     @contextmenu="openMenu"
   >
     <!-- 系统消息 -->
     <div
       v-if="isSystem"
-      class="mx-auto max-w-[85%] rounded-full bg-gray-200 px-3 py-1.5 text-center text-xs text-gray-500 sm:max-w-[80%] sm:px-4"
+      class="mx-auto max-w-[85%] rounded-full bg-stone-100 px-4 py-1.5 text-center text-xs text-stone-500 dark:bg-[#2f2f2f] dark:text-stone-400"
     >
       {{ message.content }}
     </div>
 
-    <!-- 问候消息（特殊样式） -->
+    <!-- 问候消息 -->
     <div
       v-else-if="isGreeting"
-      class="max-w-[90%] rounded-2xl rounded-bl-md bg-gradient-to-br from-amber-50 to-orange-50 px-4 py-3.5 text-sm leading-relaxed text-stone-700 shadow-sm sm:max-w-[75%] sm:px-5 sm:py-4 dark:from-amber-950 dark:to-orange-950 dark:text-stone-200 dark:border dark:border-amber-800"
+      class="max-w-[85%] rounded-2xl bg-stone-50 px-5 py-4 text-sm leading-relaxed text-stone-700 dark:bg-[#1a1a1a] dark:text-stone-200 dark:border dark:border-stone-800"
     >
       <span class="mb-2 inline-block text-base">👋</span>
       <div class="prose prose-sm max-w-none prose-p:my-1" v-html="renderedContent" />
@@ -117,22 +117,22 @@ function speakMsg() {
     <!-- 主动消息 -->
     <div
       v-else-if="isProactive"
-      class="max-w-[90%] rounded-2xl rounded-bl-md border border-amber-100 bg-amber-50 px-3 py-2.5 text-sm leading-relaxed text-stone-700 shadow-sm sm:max-w-[75%] sm:px-4 sm:py-3 dark:border-amber-800 dark:bg-amber-950 dark:text-stone-200"
+      class="max-w-[85%] rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm leading-relaxed text-stone-700 dark:border-stone-700 dark:bg-[#1a1a1a] dark:text-stone-200"
     >
-      <div class="mb-1 text-xs font-medium text-amber-600 dark:text-amber-400">{{ proactiveLabel }}</div>
+      <div class="mb-1 text-xs font-medium text-stone-500 dark:text-stone-400">{{ proactiveLabel }}</div>
       <div class="prose prose-sm max-w-none prose-p:my-1 prose-ul:my-1 prose-li:my-0" v-html="renderedContent" />
     </div>
 
     <!-- 普通消息 -->
     <div
       v-else
-      class="max-w-[90%] rounded-2xl px-3 py-2.5 text-sm leading-relaxed sm:max-w-[75%] sm:px-4 sm:py-3"
+      class="max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed"
       :class="
         isFailed
-          ? 'border border-red-200 bg-red-50 text-red-700 rounded-bl-md dark:bg-red-950 dark:border-red-800 dark:text-red-300'
+          ? 'border border-red-200 bg-red-50 text-red-700 dark:bg-red-950 dark:border-red-800 dark:text-red-300'
           : isUser
-            ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-white rounded-br-md dark:from-amber-600 dark:to-amber-700'
-            : 'bg-white text-stone-800 shadow-sm border border-stone-100 rounded-bl-md dark:bg-stone-800 dark:text-stone-100 dark:border-stone-700'
+            ? 'bg-[#f4f4f4] text-stone-800 dark:bg-[#2f2f2f] dark:text-stone-100'
+            : 'text-stone-800 dark:text-stone-100'
       "
     >
       <!-- 失败状态 -->
@@ -154,7 +154,6 @@ function speakMsg() {
 
       <!-- 正常 assistant 消息 -->
       <template v-else>
-        <!-- 已自动调研标签 -->
         <div
           v-if="isAutoResearched"
           class="mb-2 inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-medium text-emerald-600 dark:bg-emerald-950 dark:text-emerald-400"
@@ -170,7 +169,7 @@ function speakMsg() {
         </div>
         <button
           v-if="canSpeak"
-          class="mt-2 flex items-center gap-1 text-xs text-stone-400 transition-colors hover:text-amber-500 dark:text-stone-500 dark:hover:text-amber-400"
+          class="mt-2 flex items-center gap-1 text-xs text-stone-400 transition-colors hover:text-stone-600 dark:text-stone-500 dark:hover:text-stone-300"
           @click="toggleSpeak"
         >
           <svg v-if="!isSpeaking" xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -192,12 +191,12 @@ function speakMsg() {
     <Teleport to="body">
       <div
         v-if="showMenu"
-        class="fixed z-[100] min-w-[140px] rounded-xl border border-stone-200 bg-white py-1.5 shadow-lg"
+        class="fixed z-[100] min-w-[140px] rounded-xl border border-stone-200 bg-white py-1.5 shadow-lg dark:border-stone-700 dark:bg-[#2f2f2f]"
         :style="{ left: menuPos.x + 'px', top: menuPos.y + 'px' }"
         @click.stop
       >
         <button
-          class="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-stone-700 hover:bg-stone-50"
+          class="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-stone-700 hover:bg-stone-50 dark:text-stone-300 dark:hover:bg-[#3a3a3a]"
           @click="copyText"
         >
           <svg class="h-3.5 w-3.5 text-stone-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
@@ -205,7 +204,7 @@ function speakMsg() {
         </button>
         <button
           v-if="isAssistant && !isFailed"
-          class="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-stone-700 hover:bg-stone-50"
+          class="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-stone-700 hover:bg-stone-50 dark:text-stone-300 dark:hover:bg-[#3a3a3a]"
           @click="regenerate"
         >
           <svg class="h-3.5 w-3.5 text-stone-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
@@ -213,15 +212,15 @@ function speakMsg() {
         </button>
         <button
           v-if="canSpeak"
-          class="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-stone-700 hover:bg-stone-50"
+          class="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-stone-700 hover:bg-stone-50 dark:text-stone-300 dark:hover:bg-[#3a3a3a]"
           @click="speakMsg"
         >
           <svg class="h-3.5 w-3.5 text-stone-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072M18.364 5.636a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>
           {{ isSpeaking ? '停止播报' : '播报' }}
         </button>
-        <div class="my-1 border-t border-stone-100" />
+        <div class="my-1 border-t border-stone-100 dark:border-stone-700" />
         <button
-          class="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-red-500 hover:bg-red-50"
+          class="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-950"
           @click="deleteMsg"
         >
           <svg class="h-3.5 w-3.5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>

@@ -21,7 +21,7 @@ const styles: StyleOption[] = [
     <button
       v-for="s in styles"
       :key="s.key"
-      class="inline-flex items-center gap-1 rounded-full border border-stone-200 bg-white px-2.5 py-1 text-[11px] font-medium text-stone-600 transition-all hover:-translate-y-0.5 hover:border-amber-300 hover:bg-amber-50 hover:text-amber-700 hover:shadow-sm dark:border-stone-600 dark:bg-stone-700 dark:text-stone-300 dark:hover:border-amber-500 dark:hover:bg-stone-600 dark:hover:text-amber-400"
+      class="inline-flex items-center gap-1 rounded-full border border-stone-300 bg-white px-2.5 py-1 text-[11px] font-medium text-stone-600 transition-all hover:border-stone-400 hover:bg-stone-50 dark:border-stone-600 dark:bg-[#2f2f2f] dark:text-stone-300 dark:hover:border-stone-500 dark:hover:bg-[#3a3a3a]"
       @click="emit('select', s.key)"
     >
       <span>{{ s.emoji }}</span>

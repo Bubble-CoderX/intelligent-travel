@@ -6,13 +6,13 @@
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #d6d3d1; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #a8a29e; }
-.dark ::-webkit-scrollbar-thumb { background: #57534e; }
-.dark ::-webkit-scrollbar-thumb:hover { background: #78716c; }
+.dark ::-webkit-scrollbar-thumb { background: #444; }
+.dark ::-webkit-scrollbar-thumb:hover { background: #555; }
 
 /* prose 定制 */
-.prose h1, .prose h2, .prose h3 { color: #44403c; }
-.prose a { color: #38bdf8; }
-.prose strong { color: #44403c; }
+.prose h1, .prose h2, .prose h3 { color: #1c1917; }
+.prose a { color: #2563eb; }
+.prose strong { color: #1c1917; }
 .dark .prose { color: #d6d3d1; }
 .dark .prose h1, .dark .prose h2, .dark .prose h3 { color: #e7e5e4; }
 .dark .prose strong { color: #e7e5e4; }

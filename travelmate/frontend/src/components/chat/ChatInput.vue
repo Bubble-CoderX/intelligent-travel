@@ -10,13 +10,11 @@ const input = ref('')
 const tripStyle = ref<string | undefined>(undefined)
 const { isListening, transcript, errorMsg, isSupported, start, stop } = useSpeechRecognition()
 
-// ── 动态 placeholder 轮播 ────────────────────────────
 const PLACEHOLDERS = [
-  '告诉我你想去哪里旅行...',
+  '输入你想去的地方...',
   '试试说"帮我规划一个周末短途旅行"',
   '输入"杭州三天"马上生成行程',
   '问"今天适合去哪里玩"获取推荐',
-  '想知道某个景点的故事？直接问我～',
 ]
 const placeholderIdx = ref(0)
 let placeholderTimer: ReturnType<typeof setInterval> | null = null
@@ -40,11 +38,9 @@ watch(transcript, (val) => {
   if (val) input.value = val
 })
 
-// 检测旅行关键词 → 显示风格选择器
 const TRIP_KEYWORDS = /规划|行程|旅游|旅行|出游|几天|游玩|度假|攻略|出行/
 const showStyleSelector = computed(() => TRIP_KEYWORDS.test(input.value))
 
-// 选择风格后直接发送
 function handleStyleSelect(style: string) {
   const text = input.value.trim()
   if (!text) return
@@ -82,44 +78,56 @@ function handleKeydown(e: KeyboardEvent) {
 </script>
 
 <template>
-  <div class="border-t border-stone-200 bg-white px-3 py-3 sm:px-4 sm:py-4 dark:border-stone-700 dark:bg-stone-800">
+  <div>
     <!-- 行程风格选择器 -->
     <StyleSelector v-if="showStyleSelector" class="mb-2" @select="handleStyleSelect" />
-    <div class="flex items-end gap-1.5 sm:gap-2">
+
+    <div class="relative flex items-end gap-2">
       <textarea
-      v-model="input"
-      :disabled="disabled"
-      rows="1"
-      :placeholder="currentPlaceholder"
-      class="flex-1 resize-none rounded-2xl border border-stone-200 bg-stone-50 px-4 py-2.5 text-sm text-stone-800 outline-none transition-all placeholder:text-stone-400 focus:border-amber-400 focus:bg-white focus:ring-2 focus:ring-amber-100 disabled:opacity-50 dark:border-stone-600 dark:bg-stone-700 dark:text-stone-100 dark:placeholder:text-stone-500 dark:focus:border-amber-500 dark:focus:bg-stone-700"
-      :class="errorMsg ? 'border-red-300' : ''"
-      :title="errorMsg"
-      @keydown="handleKeydown"
-    />
-    <span v-if="errorMsg" class="absolute bottom-full left-3 mb-1 text-xs text-red-500 sm:left-4">{{ errorMsg }}</span>
-    <button
-      v-if="isSupported"
-      :disabled="disabled"
-      class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border transition-colors sm:h-10 sm:w-10"
-      :class="isListening
-        ? 'border-red-300 bg-red-50 text-red-600 animate-pulse'
-        : 'border-stone-200 bg-stone-50 text-stone-400 hover:bg-stone-100 dark:border-stone-600 dark:bg-stone-700 dark:hover:bg-stone-600'"
-      :title="isListening ? '停止录音' : '语音输入'"
-      @click="toggleVoice"
-    >
-      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 sm:h-5 sm:w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
-        <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-        <line x1="12" x2="12" y1="19" y2="22" />
-      </svg>
-    </button>
-    <button
-      :disabled="disabled || !input.trim()"
-      class="rounded-xl bg-amber-500 px-4 py-2 text-sm font-medium text-white transition-all hover:bg-amber-600 hover:shadow-md disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:shadow-none sm:px-5 sm:py-2.5"
-      @click="handleSend"
-    >
-      发送
-    </button>
+        v-model="input"
+        :disabled="disabled"
+        rows="1"
+        :placeholder="currentPlaceholder"
+        class="flex-1 resize-none rounded-2xl border bg-transparent px-4 py-3 text-sm outline-none transition-colors placeholder:text-stone-400 focus:border-stone-400 disabled:opacity-50 dark:placeholder:text-stone-500"
+        :class="errorMsg
+          ? 'border-red-300 dark:border-red-700'
+          : 'border-stone-300 dark:border-stone-600 dark:text-stone-100 dark:focus:border-stone-500'"
+        :title="errorMsg"
+        @keydown="handleKeydown"
+      />
+      <span v-if="errorMsg" class="absolute bottom-full left-3 mb-1 text-xs text-red-500">{{ errorMsg }}</span>
+
+      <!-- 语音按钮 -->
+      <button
+        v-if="isSupported"
+        :disabled="disabled"
+        class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border transition-colors"
+        :class="isListening
+          ? 'border-red-300 bg-red-50 text-red-500 animate-pulse dark:border-red-800 dark:bg-red-950'
+          : 'border-stone-300 text-stone-400 hover:bg-stone-50 dark:border-stone-600 dark:hover:bg-[#2f2f2f]'"
+        :title="isListening ? '停止录音' : '语音输入'"
+        @click="toggleVoice"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+          <line x1="12" x2="12" y1="19" y2="22" />
+        </svg>
+      </button>
+
+      <!-- 发送按钮 -->
+      <button
+        :disabled="disabled || !input.trim()"
+        class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-colors"
+        :class="input.trim()
+          ? 'bg-stone-800 text-white hover:bg-stone-700 dark:bg-stone-200 dark:text-stone-800 dark:hover:bg-white'
+          : 'bg-stone-200 text-stone-400 cursor-not-allowed dark:bg-[#2f2f2f] dark:text-stone-600'"
+        @click="handleSend"
+      >
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14m-7-7l7 7-7 7" />
+        </svg>
+      </button>
     </div>
   </div>
 </template>
