@@ -162,27 +162,34 @@ onUnmounted(() => {
 
     <!-- 主聊天区域 -->
     <div class="flex flex-1 flex-col min-w-0">
-      <!-- 顶部栏：侧边栏切换 + 标题 -->
-      <div class="flex items-center gap-2 px-3 py-2.5" :class="props.dark ? 'bg-[#212121]' : 'bg-white'">
-        <button
-          class="rounded-lg p-1.5 transition-colors"
-          :class="props.dark ? 'text-stone-400 hover:text-stone-200 hover:bg-[#2f2f2f]' : 'text-stone-500 hover:text-stone-700 hover:bg-stone-100'"
-          @click="showSidebar = !showSidebar"
-          title="切换侧边栏"
-        >
-          <svg v-if="showSidebar" class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
-          </svg>
-          <svg v-else class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
-          </svg>
-        </button>
-        <span v-if="!showSidebar" class="text-sm font-medium" :class="props.dark ? 'text-stone-300' : 'text-stone-600'">TravelMate</span>
+      <!-- 顶部栏：侧边栏切换 + 标题 + 天气 -->
+      <div class="flex items-center justify-between px-3 py-2.5" :class="props.dark ? 'bg-[#212121]' : 'bg-white'">
+        <div class="flex items-center gap-2">
+          <button
+            class="rounded-lg p-1.5 transition-colors"
+            :class="props.dark ? 'text-stone-400 hover:text-stone-200 hover:bg-[#2f2f2f]' : 'text-stone-500 hover:text-stone-700 hover:bg-stone-100'"
+            @click="showSidebar = !showSidebar"
+            title="切换侧边栏"
+          >
+            <svg v-if="showSidebar" class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+            </svg>
+            <svg v-else class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
+          <span class="text-base font-semibold" :class="props.dark ? 'text-stone-200' : 'text-stone-800'">
+            TravelMate
+          </span>
+        </div>
+        <span v-if="weather" class="text-sm" :class="props.dark ? 'text-stone-400' : 'text-stone-500'">
+          {{ weatherEmoji(weather.weather) }} {{ weather.city }} {{ weather.weather }} {{ weather.temp }}°
+        </span>
       </div>
 
       <!-- 消息列表 -->
       <div ref="listRef" class="flex-1 overflow-y-auto">
-        <div class="mx-auto w-full max-w-3xl px-4 py-6">
+        <div class="mx-auto w-full max-w-5xl px-4 py-6">
           <!-- 欢迎页 -->
           <div v-if="store.messages.length === 0" class="flex h-full flex-col items-center justify-center pt-[15vh]">
             <h1 class="mb-8 text-2xl font-semibold tracking-tight" :class="props.dark ? 'text-stone-200' : 'text-stone-800'">
@@ -260,17 +267,8 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- 天气提示条 -->
-      <div
-        v-if="weather"
-        class="mx-auto w-full max-w-3xl px-4 pb-1 text-center text-xs"
-        :class="props.dark ? 'text-stone-500' : 'text-stone-400'"
-      >
-        {{ weatherEmoji(weather.weather) }} {{ weather.city }} {{ weather.weather }} {{ weather.temp }}°
-      </div>
-
       <!-- 换种风格选择器 -->
-      <div v-if="switchingStyleMsg" class="mx-auto w-full max-w-3xl px-4 pb-2">
+      <div v-if="switchingStyleMsg" class="mx-auto w-full max-w-5xl px-4 pb-2">
         <div class="flex items-center justify-between">
           <span class="text-xs" :class="props.dark ? 'text-stone-400' : 'text-stone-500'">选择新风格重新生成：</span>
           <button
@@ -283,7 +281,7 @@ onUnmounted(() => {
       </div>
 
       <!-- 输入区域 -->
-      <div class="mx-auto w-full max-w-3xl px-4 pb-4">
+      <div class="mx-auto w-full max-w-5xl px-4 pb-4">
         <ChatInput :disabled="store.isLoading" @send="handleSend" />
       </div>
     </div>

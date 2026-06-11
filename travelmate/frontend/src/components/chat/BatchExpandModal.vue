@@ -12,11 +12,20 @@ const completeResult = ref<{ total: number; success: number; failed: number } | 
 
 const API_BASE = 'http://localhost:8000'
 
-const PRESET_SPOTS = [
-  '北京故宫', '上海外滩', '桂林山水', '黄山', '九寨沟',
-  '张家界', '鼓浪屿', '丽江古城', '大理古城', '拉萨布达拉宫',
-  '苏州园林', '西湖', '峨眉山', '华山', '泰山',
-]
+const CATEGORIES = ['景点', '非遗文化', '美食', '民俗', '历史遗址', '名山大川', '古城古镇', '博物馆'] as const
+const selectedCategory = ref<string>('景点')
+const generatingPresets = ref(false)
+
+const CATEGORY_PLACEHOLDERS: Record<string, string> = {
+  '景点': '西湖，九寨沟，张家界',
+  '非遗文化': '京剧，皮影戏，景德镇陶瓷',
+  '美食': '广州早茶，成都火锅，北京烤鸭',
+  '民俗': '苗族银饰，藏族唐卡，春节庙会',
+  '历史遗址': '莫高窟，三星堆，殷墟',
+  '名山大川': '黄山，泰山，长白山',
+  '古城古镇': '平遥古城，乌镇，凤凰古城',
+  '博物馆': '故宫博物院，国家博物馆，敦煌研究院',
+}
 
 function parseSpots(): string[] {
   return inputText.value
@@ -25,8 +34,20 @@ function parseSpots(): string[] {
     .filter(s => s.length >= 2)
 }
 
-function usePresets() {
-  inputText.value = PRESET_SPOTS.join('，')
+async function usePresets() {
+  if (generatingPresets.value) return
+  generatingPresets.value = true
+  try {
+    const res = await fetch(`${API_BASE}/knowledge/generate-presets?category=${encodeURIComponent(selectedCategory.value)}&count=15`)
+    const data = await res.json()
+    if (data.items?.length) {
+      inputText.value = data.items.join('，')
+    }
+  } catch {
+    // 静默失败
+  } finally {
+    generatingPresets.value = false
+  }
 }
 
 async function startBatchExpand() {
@@ -116,7 +137,7 @@ function statusIcon(s: string) {
         <div class="flex items-center justify-between border-b border-stone-200 px-5 py-4 dark:border-stone-700">
           <div>
             <h3 class="text-base font-semibold text-stone-800 dark:text-stone-100">批量扩充知识库</h3>
-            <p class="mt-0.5 text-xs text-stone-400 dark:text-stone-500">输入景点名称，AI 自动生成知识文档并入库</p>
+            <p class="mt-0.5 text-xs text-stone-400 dark:text-stone-500">输入名称，AI 自动生成知识文档并入库</p>
           </div>
           <button class="rounded-lg p-1.5 text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-700" @click="emit('close')">
             <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
@@ -130,17 +151,26 @@ function statusIcon(s: string) {
             <textarea
               v-model="inputText"
               rows="4"
-              placeholder="输入景点名称，用逗号或换行分隔，例如：&#10;北京故宫，桂林山水，黄山"
+              :placeholder="`输入名称，用逗号或换行分隔，例如：\n${CATEGORY_PLACEHOLDERS[selectedCategory]}`"
               class="w-full resize-none rounded-xl border border-stone-200 bg-stone-50 px-3 py-2.5 text-sm text-stone-800 outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-100 dark:border-stone-600 dark:bg-stone-700 dark:text-stone-100"
             />
             <div class="mt-2 flex items-center justify-between">
-              <button
-                class="text-xs text-stone-400 hover:text-amber-500 transition-colors"
-                @click="usePresets"
-              >
-                使用预设（15个热门景点）
-              </button>
-              <span class="text-xs text-stone-400">{{ parseSpots().length }} 个景点</span>
+              <div class="flex items-center gap-2">
+                <select
+                  v-model="selectedCategory"
+                  class="rounded-lg border border-stone-200 bg-stone-50 px-2 py-1 text-xs text-stone-600 outline-none dark:border-stone-600 dark:bg-stone-700 dark:text-stone-300"
+                >
+                  <option v-for="cat in CATEGORIES" :key="cat" :value="cat">{{ cat }}</option>
+                </select>
+                <button
+                  class="text-xs text-stone-400 hover:text-amber-500 transition-colors disabled:opacity-50"
+                  :disabled="generatingPresets"
+                  @click="usePresets"
+                >
+                  {{ generatingPresets ? '生成中...' : `使用预设（随机15个${selectedCategory}）` }}
+                </button>
+              </div>
+              <span class="text-xs text-stone-400">{{ parseSpots().length }} 个项目</span>
             </div>
           </div>
 

@@ -40,7 +40,7 @@ function handleRenameKeydown(e: KeyboardEvent, sessionId: string) {
 </script>
 
 <template>
-  <aside class="flex h-full w-64 flex-col bg-white text-stone-700 dark:bg-[#212121] dark:text-stone-300">
+  <aside class="flex h-full w-64 flex-col bg-white text-stone-700 border-r border-stone-200 dark:bg-[#212121] dark:text-stone-300 dark:border-stone-700">
     <!-- 顶部：收起 + 新建会话 -->
     <div class="flex items-center justify-between px-3 pt-3 pb-2">
       <button
@@ -141,7 +141,6 @@ function handleRenameKeydown(e: KeyboardEvent, sessionId: string) {
 
     <!-- 底部：功能区 -->
     <div class="border-t border-stone-200 px-3 py-2 dark:border-stone-700">
-      <div class="px-2.5 py-2 text-xs font-medium text-stone-400 dark:text-stone-500">TravelMate AI 智游伴</div>
       <button
         class="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-700 dark:text-stone-400 dark:hover:bg-[#2f2f2f] dark:hover:text-stone-200"
         @click="$emit('toggleBatchExpand')"

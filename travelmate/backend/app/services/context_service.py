@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json as _json
 import logging
 
 from app.models.database import get_db
@@ -17,7 +18,6 @@ _summary_cache: dict[str, tuple[int, str]] = {}
 
 def save_message(device_id: str, session_id: str, role: str, content: str, intent: str = "", metadata: dict | None = None) -> None:
     """保存单条消息到对话历史。metadata 会被序列化为 JSON 存储。"""
-    import json as _json
     meta_json = _json.dumps(metadata, ensure_ascii=False) if metadata else None
     conn = get_db()
     conn.execute(
@@ -26,6 +26,21 @@ def save_message(device_id: str, session_id: str, role: str, content: str, inten
     )
     conn.commit()
     conn.close()
+
+
+def _format_history_row(row) -> dict[str, str]:
+    """格式化对话历史行，主动服务消息加标记前缀。"""
+    role = row["role"]
+    content = row["content"]
+    meta_raw = row["metadata"]
+    if meta_raw and role == "assistant":
+        try:
+            meta = _json.loads(meta_raw)
+            if meta.get("proactive_type"):
+                content = f"[AI主动消息，请仅作为对话上下文参考，不要复述此标记] {content}"
+        except (ValueError, _json.JSONDecodeError):
+            pass
+    return {"role": role, "content": content}
 
 
 async def get_recent_history(
@@ -37,6 +52,7 @@ async def get_recent_history(
     获取设备对话历史（按 session_id 隔离）。
     - 消息数 ≤ SUMMARY_THRESHOLD：返回全部（最多 limit 条）
     - 消息数 > SUMMARY_THRESHOLD：旧消息摘要 + 最近 RECENT_LIMIT 条原文
+    - 主动服务消息保留但加标记，让 LLM 理解上下文但不复述
     """
     conn = get_db()
 
@@ -56,21 +72,21 @@ async def get_recent_history(
     # 消息不多，直接返回
     if total <= SUMMARY_THRESHOLD:
         rows = conn.execute(
-            f"SELECT role, content FROM conversations WHERE {where} "
+            f"SELECT role, content, metadata FROM conversations WHERE {where} "
             "ORDER BY id DESC LIMIT ?",
             params_list,
         ).fetchall()
         conn.close()
-        return [{"role": row["role"], "content": row["content"]} for row in reversed(rows)]
+        return [_format_history_row(row) for row in reversed(rows)]
 
     # 取最近 RECENT_LIMIT 条原文
     recent_params = params_list[:2] + (RECENT_LIMIT,) if session_id else (device_id, RECENT_LIMIT)
     recent_rows = conn.execute(
-        f"SELECT role, content FROM conversations WHERE {where} "
+        f"SELECT role, content, metadata FROM conversations WHERE {where} "
         "ORDER BY id DESC LIMIT ?",
         recent_params,
     ).fetchall()
-    recent = [{"role": row["role"], "content": row["content"]} for row in reversed(recent_rows)]
+    recent = [_format_history_row(row) for row in reversed(recent_rows)]
 
     # 缓存 key 包含 session_id 以隔离不同会话
     cache_key = f"{device_id}:{session_id}" if session_id else device_id
@@ -81,7 +97,7 @@ async def get_recent_history(
         # 取旧消息用于摘要
         older_params = params_count + (total - RECENT_LIMIT,)
         older_rows = conn.execute(
-            f"SELECT role, content FROM conversations WHERE {where} "
+            f"SELECT role, content, metadata FROM conversations WHERE {where} "
             "ORDER BY id ASC LIMIT ?",
             older_params,
         ).fetchall()

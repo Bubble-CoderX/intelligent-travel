@@ -91,3 +91,40 @@ async def api_auto_expand_batch(req: BatchExpandRequest):
 async def api_has_local(spot_name: str):
     """检查指定景点是否有本地知识文件。"""
     return {"has_local": has_local_knowledge(spot_name)}
+
+
+CATEGORY_PROMPTS = {
+    "景点": "国内热门旅游景点、自然风光、5A景区",
+    "非遗文化": "中国非物质文化遗产，如传统技艺、戏曲、手工艺、民俗活动",
+    "美食": "国内各地特色美食、传统小吃、饮食文化",
+    "民俗": "国内各民族传统民俗活动、节庆习俗、民间艺术",
+    "历史遗址": "国内重要历史文化遗址、考古发现、古迹",
+    "名山大川": "国内著名的山川河流、自然地理奇观",
+    "古城古镇": "国内知名古城、古镇、古村落",
+    "博物馆": "国内知名博物馆、美术馆、展览馆",
+}
+
+
+@router.get("/generate-presets")
+async def api_generate_presets(category: str = "景点", count: int = 15):
+    """用 LLM 随机生成指定类别的预设项目（不使用固定景点池）。"""
+    from app.services.llm_client import call_llm
+
+    desc = CATEGORY_PROMPTS.get(category, category)
+    prompt = (
+        f"请随机生成 {count} 个中国境内与「{desc}」相关的名称，"
+        f"每个名称之间用逗号分隔，只输出名称列表，不要编号、不要解释、不要换行。\n"
+        f"要求：覆盖面广，不要重复类型，优先选知名度较高的。"
+    )
+
+    try:
+        result = await call_llm(
+            messages=[{"role": "user", "content": prompt}],
+            system_prompt="你是一个中文旅游知识助手。",
+            temperature=0.9,
+            max_tokens=300,
+        )
+        items = [s.strip() for s in result.replace("、", ",").split(",") if len(s.strip()) >= 2]
+        return {"category": category, "items": items[:count]}
+    except Exception:
+        return {"category": category, "items": []}
