@@ -226,6 +226,22 @@ async def route_intent(user_message: str, device_id: str, session_id: str | None
     elif intent == "WEATHER":
         city = extracted.get("city", "")
         if not city:
+            # 自动检测当前位置：偏好城市 → IP定位
+            from app.services.memory_service import get_all_preferences as _gap
+            for p in _gap(device_id):
+                if p.get("category") == "location" and p.get("key") == "home_city":
+                    city = p.get("value")
+                    break
+            if not city:
+                import httpx as _httpx
+                try:
+                    resp = _httpx.get("http://ip-api.com/json/", timeout=3)
+                    data = resp.json()
+                    if data.get("status") == "success":
+                        city = data.get("city")
+                except Exception:
+                    pass
+        if not city:
             reply = "请问你想查哪个城市的天气呢？"
         else:
             try:

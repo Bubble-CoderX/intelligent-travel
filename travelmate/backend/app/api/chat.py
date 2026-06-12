@@ -25,6 +25,26 @@ async def chat_endpoint(req: ChatRequest):
 
     session_id = req.session_id or "default"
 
+    # F10: 情绪感知拦截——在意图识别前检测情绪
+    try:
+        from app.services.mood_companion_service import intercept_mood_in_chat
+        mood_result = await intercept_mood_in_chat(req.message, req.device_id)
+        if mood_result:
+            save_message(req.device_id, session_id, "user", req.message, "MOOD")
+            save_message(req.device_id, session_id, "assistant", mood_result["mood_response"], "MOOD")
+            return ChatResponse(
+                reply=mood_result["mood_response"],
+                intent="CHAT",
+                message_type="text",
+                metadata={
+                    "mood_type": mood_result["mood_type"],
+                    "mood_label": mood_result["mood_label"],
+                    "mood_confidence": mood_result["confidence"],
+                },
+            )
+    except Exception:
+        logger.debug("情绪检测失败，继续正常流程", exc_info=True)
+
     try:
         result = await route_intent(req.message, req.device_id, session_id=session_id, trip_style=req.trip_style)
     except Exception as exc:

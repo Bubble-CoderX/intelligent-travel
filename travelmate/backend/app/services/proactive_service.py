@@ -394,3 +394,39 @@ def shutdown_scheduler() -> None:
     if _scheduler.running:
         _scheduler.shutdown(wait=False)
         logger.info("APScheduler 调度器已关闭")
+
+
+# ── F8: 定时天气巡检 ──────────────────────────────────────
+
+PATROL_HOURS = [8, 20]  # 每天 08:00 和 20:00
+
+
+async def _weather_patrol_job(device_id: str, city: str) -> None:
+    """定时巡检任务：拉取天气→异常检测→推送通知。"""
+    try:
+        from app.services.weather_anomaly_detector import detect_and_push
+        report = await detect_and_push(city, device_id)
+
+        if report.has_anomaly:
+            logger.info("巡检发现异常: city=%s, anomalies=%d", city, len(report.anomalies))
+        else:
+            logger.info("巡检正常: city=%s", city)
+    except Exception:
+        logger.exception("天气巡检失败: device=%s, city=%s", device_id, city)
+
+
+def setup_weather_patrol(device_id: str, city: str) -> list[str]:
+    """设置每天 2 个时段的天气巡检（08:00 / 20:00）。"""
+    job_ids = []
+    for hour in PATROL_HOURS:
+        job_id = f"patrol_{device_id}_{city}_{hour}"
+        _scheduler.add_job(
+            _weather_patrol_job,
+            trigger=CronTrigger(hour=hour, minute=5),
+            args=[device_id, city],
+            id=job_id,
+            replace_existing=True,
+        )
+        job_ids.append(job_id)
+    logger.info("天气巡检已设置：%s → %s 每天 %s", device_id, city, PATROL_HOURS)
+    return job_ids

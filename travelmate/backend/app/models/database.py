@@ -70,4 +70,21 @@ def init_db() -> None:
     except sqlite3.OperationalError:
         pass  # 列已存在
 
+    # F1：天气数据持久化表
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS weather_records (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            city TEXT NOT NULL,
+            weather TEXT,
+            temperature INTEGER,
+            humidity TEXT,
+            wind_direction TEXT,
+            wind_power TEXT,
+            forecast_json TEXT,
+            fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_weather_city_time
+            ON weather_records(city, fetched_at DESC);
+    """)
+    conn.commit()
     conn.close()

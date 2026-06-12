@@ -14,6 +14,7 @@ from app.api.trip import router as trip_router
 from app.api.weather import router as weather_router
 from app.api.proactive import router as proactive_router
 from app.api.knowledge import router as knowledge_router
+from app.api.weather_intel import router as weather_intel_router
 from app.models.database import init_db
 from app.services.proactive_service import register_ws, unregister_ws, start_scheduler, shutdown_scheduler
 from app.services.rag_service import load_knowledge_base
@@ -45,6 +46,7 @@ app.include_router(trip_router)
 app.include_router(weather_router)
 app.include_router(proactive_router)
 app.include_router(knowledge_router)
+app.include_router(weather_intel_router)
 
 
 @app.get("/health")

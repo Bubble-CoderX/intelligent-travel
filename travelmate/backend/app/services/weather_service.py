@@ -1,5 +1,8 @@
+"""天气服务：高德 API 查询 + 持久化 + 四级降级兜底。"""
+
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -17,6 +20,8 @@ from app.services.map_service import geocode_address
 
 logger = logging.getLogger(__name__)
 
+
+# ── 高德 API 基础 ──────────────────────────────────────────
 
 def _ensure_amap_api_key() -> None:
     """确保当前环境已经配置高德地图 Key。"""
@@ -56,6 +61,112 @@ def _normalize_cache_text(value: str | None) -> str:
         return ""
     return value.strip().lower()
 
+
+# ── F1：天气数据持久化 ─────────────────────────────────────
+
+def _persist_weather(city: str, weather_data: dict) -> None:
+    """将天气快照写入 SQLite。"""
+    try:
+        from app.models.database import get_db
+        today = weather_data.get("days", [{}])[0] if weather_data.get("days") else {}
+        conn = get_db()
+        conn.execute(
+            "INSERT INTO weather_records (city, weather, temperature, wind_direction, wind_power, forecast_json) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                city,
+                today.get("day_weather", ""),
+                int(today.get("day_temp", 0) or 0),
+                today.get("day_wind", ""),
+                today.get("night_wind", ""),
+                json.dumps(weather_data, ensure_ascii=False),
+            ),
+        )
+        conn.commit()
+        conn.close()
+    except Exception:
+        logger.exception("天气数据持久化失败: %s", city)
+
+
+def get_weather_history(city: str, limit: int = 7) -> list[dict]:
+    """查询城市的历史天气记录。"""
+    from app.models.database import get_db
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT city, weather, temperature, wind_direction, wind_power, forecast_json, fetched_at "
+        "FROM weather_records WHERE city = ? ORDER BY fetched_at DESC LIMIT ?",
+        (city, limit),
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+# ── F2：四级降级策略 ───────────────────────────────────────
+
+async def get_weather_with_fallback(city: str) -> dict[str, Any]:
+    """
+    四级降级获取天气：
+      Level 1: 内存缓存（已有 Redis 缓存层）
+      Level 2: SQLite 最近一条记录
+      Level 3: 高德 API 实时请求
+      Level 4: LLM 通用知识估算
+    返回数据含 _source 字段标识来源。
+    """
+    # Level 1: Redis 缓存
+    cache_key = f"weather:forecast:{_normalize_cache_text(city)}"
+    cached = get_cached_json(cache_key)
+    if cached is not None:
+        cached["_source"] = "cache"
+        return cached
+
+    # Level 2: SQLite 历史记录（仅当数据在 30 分钟内时使用）
+    from datetime import datetime, timedelta
+    from app.models.database import get_db
+    conn = get_db()
+    row = conn.execute(
+        "SELECT forecast_json, fetched_at FROM weather_records WHERE city = ? ORDER BY fetched_at DESC LIMIT 1",
+        (city,),
+    ).fetchone()
+    conn.close()
+    if row and row["forecast_json"]:
+        try:
+            fetched_at = datetime.strptime(row["fetched_at"], "%Y-%m-%d %H:%M:%S")
+            if datetime.now() - fetched_at < timedelta(minutes=30):
+                db_data = json.loads(row["forecast_json"])
+                db_data["_source"] = "database"
+                return db_data
+        except (json.JSONDecodeError, KeyError, ValueError):
+            pass
+
+    # Level 3: 高德 API
+    try:
+        result = get_weather_forecast(city)
+        _persist_weather(city, result)
+        result["_source"] = "api"
+        return result
+    except Exception:
+        logger.warning("高德天气 API 失败: %s", city)
+
+    # Level 4: LLM 通用知识估算
+    try:
+        from app.services.llm_client import call_llm
+        estimate = await call_llm(
+            messages=[{"role": "user", "content": f"请用1-2句话简要描述{city}当前季节的典型天气情况，包括气温范围和天气特征。只输出天气描述，不要其他内容。"}],
+            system_prompt="你是天气助手，根据通用知识回答。",
+            temperature=0.3,
+            max_tokens=100,
+        )
+        return {
+            "city": city,
+            "days": [{"day_weather": estimate.strip(), "day_temp": "?", "night_temp": "?", "day_wind": "未知"}],
+            "report_time": "LLM估算",
+            "_source": "llm_estimate",
+        }
+    except Exception:
+        return {"city": city, "days": [], "_source": "unavailable"}
+
+
+# ── 核心查询（带持久化） ──────────────────────────────────
 
 def get_weather_forecast(city: str) -> dict[str, Any]:
     """获取指定城市的未来天气预报。"""
@@ -106,4 +217,8 @@ def get_weather_forecast(city: str) -> dict[str, Any]:
         "days": days,
     }
     set_cached_json(cache_key, result, expire_seconds=REDIS_WEATHER_TTL_SECONDS)
+
+    # 持久化到 SQLite
+    _persist_weather(city, result)
+
     return result
