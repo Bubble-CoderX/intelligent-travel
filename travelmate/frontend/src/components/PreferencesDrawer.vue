@@ -5,7 +5,8 @@ import { getDeviceId } from '@/utils/device'
 
 const emit = defineEmits<{ close: [] }>()
 
-interface Preference {
+// ── 数据 ──────────────────────────────────────────
+interface PrefItem {
   id: number
   category: string
   key: string
@@ -13,44 +14,99 @@ interface Preference {
   confidence: number
 }
 
-const prefs = ref<Preference[]>([])
+const allPrefs = ref<PrefItem[]>([])
 const loading = ref(true)
 const error = ref('')
 
-// 新增表单
-const showAdd = ref(false)
-const newCategory = ref('diet')
-const newKey = ref('')
-const newValue = ref('')
+// 出行档案（travel_profile）
+const profileLabels: Record<string, { label: string; type: string }> = {
+  group_size:        { label: '出行人数', type: 'text' },
+  composition:       { label: '人员构成', type: 'text' },
+  child_age:         { label: '儿童年龄', type: 'text' },
+  elder_count:       { label: '老人数量', type: 'text' },
+  travel_style:      { label: '旅行风格', type: 'text' },
+  interests:         { label: '兴趣标签', type: 'list' },
+  dietary:           { label: '饮食忌口', type: 'list' },
+  accommodation:     { label: '住宿偏好', type: 'text' },
+  fitness_level:     { label: '体力水平', type: 'text' },
+  photo_need:        { label: '拍照需求', type: 'text' },
+  atmosphere:        { label: '氛围偏好', type: 'text' },
+  allergies:         { label: '过敏史', type: 'list' },
+  special_needs:     { label: '特殊需求', type: 'list' },
+  budget_daily:      { label: '日均预算', type: 'text' },
+  budget_tier:       { label: '预算等级', type: 'text' },
+  transport_preference: { label: '出行方式', type: 'text' },
+}
 
-// 按类别分组
-const grouped = computed(() => {
-  const map: Record<string, Preference[]> = {}
-  for (const p of prefs.value) {
-    if (!map[p.category]) map[p.category] = []
-    map[p.category].push(p)
+const compositionMap: Record<string, string> = {
+  solo: '独自出行', couple: '情侣出行', family_child: '家庭（带娃）',
+  family_elder: '家庭（带老人）', group: '多人结伴',
+}
+const styleMap: Record<string, string> = {
+  deep: '深度游', checkin: '打卡游', leisure: '休闲游', adventure: '探险游',
+}
+const transportMap: Record<string, string> = {
+  drive: '偏好自驾', public: '偏好公共交通', flexible: '灵活推荐',
+}
+const interestMap: Record<string, string> = {
+  history: '历史', food: '美食', shopping: '购物', nature: '自然',
+  art: '艺术', photography: '拍照', kid_friendly: '亲子',
+}
+const budgetTierMap: Record<string, string> = {
+  poor: '穷游', economic: '经济', comfortable: '舒适', luxury: '奢华',
+}
+
+// 精确设置区
+const showEdit = ref<'budget' | 'allergies' | 'special_needs' | 'transport' | null>(null)
+const editBudget = ref('')
+const editAllergies = ref('')
+const editSpecialNeeds = ref('')
+const editTransport = ref('flexible')
+
+// 系统信息
+const systemPrefs = computed(() =>
+  allPrefs.value.filter(p => p.key === 'departure_city' || p.key === 'current_city')
+)
+
+// 出行档案
+const profilePrefs = computed(() =>
+  allPrefs.value.filter(p => p.category === 'travel_profile' && !['departure_city', 'current_city'].includes(p.key))
+)
+
+// 已设置的精确设置
+function getProfileVal(key: string): string {
+  const p = allPrefs.value.find(x => x.category === 'travel_profile' && x.key === key)
+  return p?.value ?? ''
+}
+
+function displayValue(item: PrefItem): string {
+  const info = profileLabels[item.key]
+  if (!info) return item.value
+
+  // 列表型
+  if (info.type === 'list') {
+    try {
+      const arr = JSON.parse(item.value)
+      if (Array.isArray(arr)) return arr.map(v => interestMap[v] ?? v).join('、')
+    } catch { /* ignore */ }
+    return item.value
   }
-  return map
-})
-
-const categoryNames: Record<string, string> = {
-  diet: '🍴 饮食偏好',
-  budget: '💰 预算偏好',
-  accommodation: '🏨 住宿偏好',
-  transport: '🚗 出行偏好',
-  general: '📋 通用偏好',
+  // 枚举映射
+  if (item.key === 'composition') return compositionMap[item.value] ?? item.value
+  if (item.key === 'travel_style') return styleMap[item.value] ?? item.value
+  if (item.key === 'transport_preference') return transportMap[item.value] ?? item.value
+  if (item.key === 'budget_tier') return budgetTierMap[item.value] ?? item.value
+  if (item.key === 'budget_daily') return `${item.value} 元/天`
+  return item.value
 }
 
-function catName(cat: string) {
-  return categoryNames[cat] ?? `📁 ${cat}`
-}
-
+// ── 加载 ──────────────────────────────────────────
 async function fetchPrefs() {
   loading.value = true
   error.value = ''
   try {
     const res = await api.get(`/memory/${getDeviceId()}/preferences`)
-    prefs.value = res.data.preferences ?? []
+    allPrefs.value = res.data.preferences ?? []
   } catch {
     error.value = '加载偏好失败'
   } finally {
@@ -58,32 +114,70 @@ async function fetchPrefs() {
   }
 }
 
-async function del(category: string, key: string) {
+// ── 删除单条偏好 ──────────────────────────────────
+async function delPref(category: string, key: string) {
   try {
-    await api.delete(`/memory/${getDeviceId()}/preferences`, {
-      params: { category, key },
-    })
-    prefs.value = prefs.value.filter(p => !(p.category === category && p.key === key))
+    await api.delete(`/memory/${getDeviceId()}/preferences`, { params: { category, key } })
+    allPrefs.value = allPrefs.value.filter(p => !(p.category === category && p.key === key))
   } catch {
     error.value = '删除失败'
   }
 }
 
-async function add() {
-  if (!newKey.value.trim() || !newValue.value.trim()) return
+// ── 精确设置保存 ──────────────────────────────────
+async function savePref(category: string, key: string, value: string) {
   try {
-    await api.post(`/memory/${getDeviceId()}/preferences`, {
-      category: newCategory.value,
-      key: newKey.value.trim(),
-      value: newValue.value.trim(),
-    })
-    showAdd.value = false
-    newKey.value = ''
-    newValue.value = ''
-    await fetchPrefs()
+    await api.post(`/memory/${getDeviceId()}/preferences`, { category, key, value })
+    // 更新本地数据
+    const existing = allPrefs.value.find(p => p.category === category && p.key === key)
+    if (existing) {
+      existing.value = value
+    } else {
+      allPrefs.value.push({ id: Date.now(), category, key, value, confidence: 1.0 })
+    }
+    showEdit.value = null
   } catch {
-    error.value = '添加失败'
+    error.value = '保存失败'
   }
+}
+
+function startEditBudget() {
+  editBudget.value = getProfileVal('budget_daily') || ''
+  showEdit.value = 'budget'
+}
+function startEditAllergies() {
+  const raw = getProfileVal('allergies')
+  try { editAllergies.value = JSON.parse(raw).join('、') } catch { editAllergies.value = raw }
+  showEdit.value = 'allergies'
+}
+function startEditSpecialNeeds() {
+  const raw = getProfileVal('special_needs')
+  try { editSpecialNeeds.value = JSON.parse(raw).join('、') } catch { editSpecialNeeds.value = raw }
+  showEdit.value = 'special_needs'
+}
+function startEditTransport() {
+  editTransport.value = getProfileVal('transport_preference') || 'flexible'
+  showEdit.value = 'transport'
+}
+
+function saveBudget() {
+  const num = parseInt(editBudget.value)
+  if (!isNaN(num) && num > 0) {
+    savePref('travel_profile', 'budget_daily', String(num))
+    // 同步计算 tier
+    if (num <= 200) savePref('travel_profile', 'budget_tier', 'poor')
+    else if (num <= 500) savePref('travel_profile', 'budget_tier', 'economic')
+    else if (num <= 1000) savePref('travel_profile', 'budget_tier', 'comfortable')
+    else savePref('travel_profile', 'budget_tier', 'luxury')
+  }
+}
+function saveAllergies() {
+  const arr = editAllergies.value.split(/[、,，\s]+/).filter(s => s.trim())
+  savePref('travel_profile', 'allergies', JSON.stringify(arr))
+}
+function saveSpecialNeeds() {
+  const arr = editSpecialNeeds.value.split(/[、,，\s]+/).filter(s => s.trim())
+  savePref('travel_profile', 'special_needs', JSON.stringify(arr))
 }
 
 onMounted(fetchPrefs)
@@ -117,79 +211,150 @@ onMounted(fetchPrefs)
           加载中...
         </div>
 
-        <div v-else-if="prefs.length === 0" class="py-12 text-center">
+        <div v-else-if="allPrefs.length === 0" class="py-12 text-center">
           <p class="text-3xl mb-2">📋</p>
           <p class="text-sm text-stone-400 dark:text-stone-500">暂无偏好记录</p>
-          <p class="mt-1 text-xs text-stone-300 dark:text-stone-600">保存偏好后，AI 会按你的习惯推荐行程和美食</p>
+          <p class="mt-1 text-xs text-stone-300 dark:text-stone-600">跟AI聊几句就能自动提取你的旅行档案</p>
         </div>
 
-        <div v-else v-for="(items, cat) in grouped" :key="cat" class="mb-5">
-          <h4 class="mb-2 text-xs font-semibold uppercase text-stone-400 dark:text-stone-500">{{ catName(cat) }}</h4>
-          <div class="space-y-2">
-            <div
-              v-for="p in items"
-              :key="p.id"
-              class="flex items-center justify-between rounded-lg border border-stone-100 bg-stone-50 px-3 py-2.5 dark:border-stone-700 dark:bg-[#1a1a1a]"
-            >
-              <div class="min-w-0 flex-1">
-                <div class="text-sm font-medium text-stone-700 dark:text-stone-200">{{ p.key }}</div>
-                <div class="mt-0.5 text-xs text-stone-500 dark:text-stone-400">{{ p.value }}</div>
-              </div>
-              <button
-                class="ml-2 shrink-0 rounded p-1 text-stone-300 hover:bg-red-50 hover:text-red-400 dark:text-stone-600 dark:hover:bg-red-950 dark:hover:text-red-300"
-                @click="del(p.category, p.key)"
+        <div v-else class="space-y-6">
+          <!-- ═══ 区域一：出行档案 ═══ -->
+          <div v-if="profilePrefs.length > 0">
+            <h4 class="mb-3 text-xs font-semibold uppercase text-stone-400 dark:text-stone-500">👤 出行档案</h4>
+            <p class="mb-2 text-[11px] text-stone-300 dark:text-stone-600">在对话中自然表达即可自动提取</p>
+            <div class="space-y-1.5">
+              <div
+                v-for="p in profilePrefs"
+                :key="p.id"
+                class="flex items-center justify-between rounded-lg border border-stone-100 bg-stone-50 px-3 py-2 dark:border-stone-700 dark:bg-[#1a1a1a]"
               >
-                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                </svg>
-              </button>
+                <div class="min-w-0 flex-1">
+                  <div class="text-xs text-stone-400 dark:text-stone-500">{{ profileLabels[p.key]?.label ?? p.key }}</div>
+                  <div class="mt-0.5 text-sm font-medium text-stone-700 dark:text-stone-200">{{ displayValue(p) }}</div>
+                </div>
+                <button
+                  class="ml-2 shrink-0 rounded p-1 text-stone-300 hover:bg-red-50 hover:text-red-400 dark:text-stone-600 dark:hover:bg-red-950 dark:hover:text-red-300"
+                  @click="delPref(p.category, p.key)"
+                  title="删除"
+                >
+                  <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      </div>
 
-      <!-- 添加按钮 -->
-      <div class="border-t px-5 py-4 dark:border-stone-700">
-        <button
-          v-if="!showAdd"
-          class="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-stone-200 py-2.5 text-sm text-stone-400 hover:border-stone-400 hover:text-stone-500 dark:border-stone-700 dark:text-stone-500 dark:hover:border-stone-500 dark:hover:text-stone-300"
-          @click="showAdd = true"
-        >
-          + 添加偏好
-        </button>
+          <!-- ═══ 区域二：精确设置 ═══ -->
+          <div>
+            <h4 class="mb-3 text-xs font-semibold uppercase text-stone-400 dark:text-stone-500">⚙️ 精确设置</h4>
+            <p class="mb-2 text-[11px] text-stone-300 dark:text-stone-600">以下信息需要手动设置，精度更高</p>
+            <div class="space-y-1.5">
+              <!-- 日均预算 -->
+              <div class="rounded-lg border border-stone-100 bg-stone-50 px-3 py-2.5 dark:border-stone-700 dark:bg-[#1a1a1a]">
+                <div class="flex items-center justify-between">
+                  <div>
+                    <div class="text-xs text-stone-400 dark:text-stone-500">💰 日均预算</div>
+                    <div class="mt-0.5 text-sm font-medium text-stone-700 dark:text-stone-200">
+                      {{ getProfileVal('budget_daily') ? `${getProfileVal('budget_daily')} 元/天` : '未设置' }}
+                    </div>
+                  </div>
+                  <button class="text-xs text-stone-400 hover:text-stone-600 dark:hover:text-stone-200" @click="startEditBudget">编辑</button>
+                </div>
+                <!-- 编辑态 -->
+                <div v-if="showEdit === 'budget'" class="mt-2 flex gap-2">
+                  <input v-model="editBudget" type="number" placeholder="如 500" class="flex-1 rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-sm outline-none focus:border-stone-400 dark:border-stone-600 dark:bg-[#2a2a2a] dark:text-stone-200" />
+                  <button class="rounded-lg bg-stone-800 px-3 py-1.5 text-xs font-medium text-white dark:bg-stone-200 dark:text-stone-800" @click="saveBudget">保存</button>
+                </div>
+              </div>
 
-        <div v-else class="space-y-3">
-          <select v-model="newCategory" class="w-full rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-sm dark:border-stone-600 dark:bg-[#1a1a1a] dark:text-stone-200">
-            <option value="diet">饮食偏好</option>
-            <option value="budget">预算偏好</option>
-            <option value="accommodation">住宿偏好</option>
-            <option value="transport">出行偏好</option>
-            <option value="general">通用偏好</option>
-          </select>
-          <input
-            v-model="newKey"
-            placeholder="键（如：忌口）"
-            class="w-full rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-sm dark:border-stone-600 dark:bg-[#1a1a1a] dark:text-stone-200 dark:placeholder:text-stone-500"
-          />
-          <input
-            v-model="newValue"
-            placeholder="值（如：不吃辣）"
-            class="w-full rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-sm dark:border-stone-600 dark:bg-[#1a1a1a] dark:text-stone-200 dark:placeholder:text-stone-500"
-          />
-          <div class="flex gap-2">
-            <button
-              class="flex-1 rounded-lg bg-stone-100 py-2 text-sm text-stone-500 dark:bg-[#2f2f2f] dark:text-stone-400"
-              @click="showAdd = false; newKey = ''; newValue = ''"
-            >
-              取消
-            </button>
-            <button
-              class="flex-1 rounded-lg bg-stone-800 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-stone-200 dark:text-stone-800"
-              :disabled="!newKey.trim() || !newValue.trim()"
-              @click="add"
-            >
-              保存
-            </button>
+              <!-- 过敏史 -->
+              <div class="rounded-lg border border-stone-100 bg-stone-50 px-3 py-2.5 dark:border-stone-700 dark:bg-[#1a1a1a]">
+                <div class="flex items-center justify-between">
+                  <div>
+                    <div class="text-xs text-stone-400 dark:text-stone-500">🤧 过敏史</div>
+                    <div class="mt-0.5 text-sm font-medium text-stone-700 dark:text-stone-200">
+                      {{ (() => { const raw = getProfileVal('allergies'); if (!raw) return '未设置'; try { return JSON.parse(raw).join('、') } catch { return raw } })() }}
+                    </div>
+                  </div>
+                  <button class="text-xs text-stone-400 hover:text-stone-600 dark:hover:text-stone-200" @click="startEditAllergies">编辑</button>
+                </div>
+                <div v-if="showEdit === 'allergies'" class="mt-2">
+                  <input v-model="editAllergies" placeholder="用顿号分隔，如：花粉过敏、鼻炎" class="w-full rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-sm outline-none focus:border-stone-400 dark:border-stone-600 dark:bg-[#2a2a2a] dark:text-stone-200" />
+                  <div class="mt-1.5 flex flex-wrap gap-1">
+                    <button v-for="opt in ['花粉过敏','季节性鼻炎','尘螨过敏','宠物毛发过敏']" :key="opt"
+                      class="rounded-full border border-stone-200 bg-white px-2 py-0.5 text-[10px] text-stone-500 hover:border-stone-400 dark:border-stone-600 dark:bg-[#2a2a2a] dark:text-stone-400"
+                      @click="editAllergies = editAllergies ? editAllergies + '、' + opt : opt"
+                    >{{ opt }}</button>
+                  </div>
+                  <button class="mt-2 rounded-lg bg-stone-800 px-3 py-1.5 text-xs font-medium text-white dark:bg-stone-200 dark:text-stone-800" @click="saveAllergies">保存</button>
+                </div>
+              </div>
+
+              <!-- 特殊需求 -->
+              <div class="rounded-lg border border-stone-100 bg-stone-50 px-3 py-2.5 dark:border-stone-700 dark:bg-[#1a1a1a]">
+                <div class="flex items-center justify-between">
+                  <div>
+                    <div class="text-xs text-stone-400 dark:text-stone-500">🍼 特殊需求</div>
+                    <div class="mt-0.5 text-sm font-medium text-stone-700 dark:text-stone-200">
+                      {{ (() => { const raw = getProfileVal('special_needs'); if (!raw) return '未设置'; try { return JSON.parse(raw).join('、') } catch { return raw } })() }}
+                    </div>
+                  </div>
+                  <button class="text-xs text-stone-400 hover:text-stone-600 dark:hover:text-stone-200" @click="startEditSpecialNeeds">编辑</button>
+                </div>
+                <div v-if="showEdit === 'special_needs'" class="mt-2">
+                  <input v-model="editSpecialNeeds" placeholder="用顿号分隔，如：携带婴儿、行动不便" class="w-full rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-sm outline-none focus:border-stone-400 dark:border-stone-600 dark:bg-[#2a2a2a] dark:text-stone-200" />
+                  <div class="mt-1.5 flex flex-wrap gap-1">
+                    <button v-for="opt in ['携带婴儿','行动不便','轮椅需求','携带宠物','素食','清真']" :key="opt"
+                      class="rounded-full border border-stone-200 bg-white px-2 py-0.5 text-[10px] text-stone-500 hover:border-stone-400 dark:border-stone-600 dark:bg-[#2a2a2a] dark:text-stone-400"
+                      @click="editSpecialNeeds = editSpecialNeeds ? editSpecialNeeds + '、' + opt : opt"
+                    >{{ opt }}</button>
+                  </div>
+                  <button class="mt-2 rounded-lg bg-stone-800 px-3 py-1.5 text-xs font-medium text-white dark:bg-stone-200 dark:text-stone-800" @click="saveSpecialNeeds">保存</button>
+                </div>
+              </div>
+
+              <!-- 出行方式 -->
+              <div class="rounded-lg border border-stone-100 bg-stone-50 px-3 py-2.5 dark:border-stone-700 dark:bg-[#1a1a1a]">
+                <div class="flex items-center justify-between">
+                  <div>
+                    <div class="text-xs text-stone-400 dark:text-stone-500">🚗 出行方式偏好</div>
+                    <div class="mt-0.5 text-sm font-medium text-stone-700 dark:text-stone-200">
+                      {{ transportMap[getProfileVal('transport_preference')] || '灵活推荐' }}
+                    </div>
+                  </div>
+                  <button class="text-xs text-stone-400 hover:text-stone-600 dark:hover:text-stone-200" @click="startEditTransport">编辑</button>
+                </div>
+                <div v-if="showEdit === 'transport'" class="mt-2 flex gap-1.5">
+                  <button
+                    v-for="(label, key) in transportMap" :key="key"
+                    class="flex-1 rounded-lg border px-2 py-1.5 text-xs font-medium transition-colors"
+                    :class="editTransport === key
+                      ? 'border-stone-800 bg-stone-800 text-white dark:border-stone-200 dark:bg-stone-200 dark:text-stone-800'
+                      : 'border-stone-200 bg-white text-stone-600 hover:border-stone-400 dark:border-stone-600 dark:bg-[#2a2a2a] dark:text-stone-300'"
+                    @click="editTransport = key; savePref('travel_profile', 'transport_preference', key)"
+                  >{{ label }}</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ═══ 区域三：系统信息 ═══ -->
+          <div v-if="systemPrefs.length > 0">
+            <h4 class="mb-3 text-xs font-semibold uppercase text-stone-400 dark:text-stone-500">📍 系统信息</h4>
+            <div class="space-y-1.5">
+              <div
+                v-for="p in systemPrefs"
+                :key="p.id"
+                class="flex items-center justify-between rounded-lg border border-stone-100 bg-stone-50 px-3 py-2 dark:border-stone-700 dark:bg-[#1a1a1a]"
+              >
+                <div>
+                  <div class="text-xs text-stone-400 dark:text-stone-500">{{ p.key === 'departure_city' ? '出发地' : '当前城市' }}</div>
+                  <div class="mt-0.5 text-sm font-medium text-stone-700 dark:text-stone-200">{{ p.value }}</div>
+                </div>
+                <span class="text-[10px] text-stone-300 dark:text-stone-600">自动获取</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>

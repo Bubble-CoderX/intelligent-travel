@@ -10,6 +10,7 @@ from app.services.context_service import get_recent_history
 from app.services.llm_client import call_llm
 from app.services.map_service import search_places
 from app.services.memory_service import get_all_preferences, query_memory, save_memory
+from app.services.profile_extractor import extract_travel_profile, get_travel_profile_text
 from app.services.rag_service import query_knowledge
 from app.services.regex_matcher import regex_match
 from app.services.trip_service import generate_trip_plan, query_trip_plans
@@ -77,11 +78,20 @@ INTENT_RECOGNITION_PROMPT = """你是「AI智游伴」的意图识别引擎。
 
 
 def _get_user_preferences(device_id: str) -> str:
-    """从记忆服务读取用户偏好，拼成文本供 LLM 参考。"""
+    """从记忆服务读取用户偏好+出行档案，拼成文本供 LLM 参考。"""
+    # 出行档案（结构化数据，优先展示）
+    profile_text = get_travel_profile_text(device_id)
+
+    # 通用偏好（旧格式兼容）
     prefs = get_all_preferences(device_id)
-    if not prefs:
-        return "（暂无历史偏好）"
-    return "\n".join(f"- {p['category']}/{p['key']}: {p['value']}" for p in prefs)
+    legacy = [
+        f"- {p['category']}/{p['key']}: {p['value']}"
+        for p in prefs
+        if p.get("category") not in ("travel_profile",)
+    ]
+    legacy_text = "\n".join(legacy) if legacy else "（无通用偏好）"
+
+    return f"## 出行档案\n{profile_text}\n\n## 通用偏好\n{legacy_text}"
 
 
 async def route_intent(user_message: str, device_id: str, session_id: str | None = None, trip_style: str | None = None) -> dict:
@@ -97,6 +107,12 @@ async def route_intent(user_message: str, device_id: str, session_id: str | None
             "reply": "抱歉，我无法处理这类请求。如果你遇到了旅行中的问题，我很乐意帮你解决。",
             "safety": safety,
         }
+
+    # 0.5 对话式旅行档案自动提取（每条用户消息都执行）
+    try:
+        extract_travel_profile(device_id, user_message)
+    except Exception:
+        logger.debug("旅行档案提取失败，跳过", exc_info=True)
 
     # 1. 第一层：正则快速匹配
     regex_result = regex_match(user_message)
@@ -241,6 +257,11 @@ async def route_intent(user_message: str, device_id: str, session_id: str | None
                         city = data.get("city")
                 except Exception:
                     pass
+
+        # 英文/拼音城市名 → 中文
+        if city:
+            from app.api.weather import _EN_TO_CN_CITY
+            city = _EN_TO_CN_CITY.get(city, city)
         if not city:
             reply = "请问你想查哪个城市的天气呢？"
         else:
