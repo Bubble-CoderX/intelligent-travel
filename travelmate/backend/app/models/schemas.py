@@ -77,7 +77,7 @@ class TripSaveRequest(BaseModel):
 class SpotItem(BaseModel):
     """单个景点安排。"""
 
-    name: str = Field(..., description="景点名称")
+    name: str = Field(default="", description="景点名称")
     start_time: str | None = Field(default=None, description="开始时间")
     end_time: str | None = Field(default=None, description="结束时间")
     description: str | None = Field(default=None, description="景点安排说明")
@@ -94,8 +94,8 @@ class SpotItem(BaseModel):
 class MealItem(BaseModel):
     """单个餐饮安排。"""
 
-    name: str = Field(..., description="餐厅或餐饮建议名称")
-    meal_type: str = Field(..., description="早餐、午餐、晚餐等")
+    name: str = Field(default="", description="餐厅或餐饮建议名称")
+    meal_type: str = Field(default="午餐", description="早餐、午餐、晚餐等")
     estimated_cost: float = Field(default=0.0, ge=0, description="预估花费")
     notes: str | None = Field(default=None, description="补充说明")
 
@@ -103,7 +103,7 @@ class MealItem(BaseModel):
 class HotelItem(BaseModel):
     """单个住宿安排。"""
 
-    name: str = Field(..., description="酒店名称")
+    name: str = Field(default="", description="酒店名称")
     level: str | None = Field(default=None, description="酒店档次")
     estimated_cost: float = Field(default=0.0, ge=0, description="预估花费")
     location: str | None = Field(default=None, description="酒店位置")
@@ -115,7 +115,7 @@ class HotelItem(BaseModel):
 class TransportItem(BaseModel):
     """单段交通安排。"""
 
-    mode: str = Field(..., description="交通方式，例如步行、打车、公交")
+    mode: str = Field(default="打车", description="交通方式，例如步行、打车、公交")
     from_place: str | None = Field(default=None, description="出发地")
     to_place: str | None = Field(default=None, description="目的地")
     estimated_cost: float = Field(default=0.0, ge=0, description="预估花费")
@@ -138,7 +138,7 @@ class BudgetBreakdown(BaseModel):
 class DayPlan(BaseModel):
     """单日行程安排。"""
 
-    day_index: int = Field(..., ge=1, description="第几天")
+    day_index: int = Field(default=1, ge=1, description="第几天")
     date: DateType | None = Field(default=None, description="当天日期")
     theme: str | None = Field(default=None, description="当天主题")
     spots: list[SpotItem] = Field(default_factory=list, description="景点安排")
@@ -151,9 +151,9 @@ class DayPlan(BaseModel):
 class Itinerary(BaseModel):
     """完整行程。"""
 
-    trip_id: str = Field(..., description="行程唯一标识")
-    destination: str = Field(..., description="目的地")
-    summary: str = Field(..., description="整趟行程的概述")
+    trip_id: str = Field(default="", description="行程唯一标识")
+    destination: str = Field(default="", description="目的地")
+    summary: str = Field(default="", description="整趟行程的概述")
     days: list[DayPlan] = Field(default_factory=list, description="逐日行程")
     estimated_budget: float = Field(default=0.0, ge=0, description="预算总计")
     budget_breakdown: BudgetBreakdown | None = Field(default=None, description="预算明细")

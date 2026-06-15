@@ -295,8 +295,18 @@ async def route_intent(user_message: str, device_id: str, session_id: str | None
                 if safety.get("level") == "URGENT":
                     reply = f"{safety.get('warning', '')}\n\n当前不适宜生成完整行程计划，请先确保安全情况。"
                 else:
+                    # 提取出发地：从用户消息中匹配"从XX出发/去/到/飞"
+                    departure = ""
+                    dep_match = re.search(r'从([一-龥]{2,6})(?:出发|去|到|飞|坐|自驾)', user_message)
+                    if dep_match:
+                        departure = dep_match.group(1)
+
                     try:
-                        result = await generate_trip_plan(device_id, destination, days_num, style=trip_style or "default")
+                        result = await generate_trip_plan(
+                            device_id, destination, days_num,
+                            style=trip_style or "default",
+                            departure=departure,
+                        )
                         reply = result["summary"]
                         extracted["_trip_plan"] = result.get("itinerary_json")
                         if safety.get("level") == "WARN" and safety.get("warning"):

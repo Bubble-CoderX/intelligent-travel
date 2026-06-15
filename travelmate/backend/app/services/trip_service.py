@@ -7,6 +7,8 @@ import re
 import uuid
 from typing import Any
 
+import httpx
+
 from app.models.database import get_db
 from app.models.schemas import BudgetBreakdown, DayPlan, Itinerary, SpotItem, MealItem, TransportItem, HotelItem
 from app.services.llm_client import call_llm
@@ -108,7 +110,8 @@ def _save_trip_to_db(
 
 
 async def generate_trip_plan(
-    device_id: str, destination: str, days: int, style: str = "default"
+    device_id: str, destination: str, days: int, style: str = "default",
+    departure: str = "",
 ) -> dict[str, Any]:
     """
     完整行程生成流程：
@@ -145,6 +148,22 @@ async def generate_trip_plan(
     # ── O1: 出行档案注入 ───────────────────────────────
     travel_profile_text = get_travel_profile_text(device_id)
 
+    # 提前获取出行人数和预算等级（预算计算和交通推荐都需要）
+    group_size = int(_get_profile_field(device_id, "group_size", "2") or "2")
+    budget_tier = _get_profile_field(device_id, "budget_tier", "economic") or "economic"
+
+    # 补充：日均预算 = 人均日均，总预算 = 人均日均 × 人数 × 天数
+    daily_budget = int(_get_profile_field(device_id, "budget_daily", "0") or "0")
+    if daily_budget > 0:
+        total_budget = daily_budget * group_size * days
+        travel_profile_text += (
+            f"\n\n## 预算计算（必须遵守）"
+            f"\n- 日均预算{daily_budget}元是**每人每天**的标准"
+            f"\n- 本次行程：{daily_budget}元/人/天 × {group_size}人 × {days}天 = **总预算{total_budget}元**"
+            f"\n- 预算估算(estimated_budget)必须填写{total_budget}元"
+            f"\n- 各项费用（交通/住宿/餐饮/门票）的总和不得超过{total_budget}元"
+        )
+
     # ── O2: 健康信息提取 ───────────────────────────────
     allergies = _get_profile_field(device_id, "allergies", [])
     special_needs = _get_profile_field(device_id, "special_needs", [])
@@ -172,6 +191,37 @@ async def generate_trip_plan(
 
     health_text = "\n".join(health_parts) if health_parts else "无特殊健康或人群需求"
 
+    # ── O2: 交通推荐（出发地 → 目的地） ──────────────────
+    # 优先级：用户消息传入 > profile存储 > IP定位
+    if not departure:
+        departure = _get_profile_field(device_id, "departure_city", "")
+
+    # 出发地为空 → 自动IP定位获取
+    if not departure or departure in ("未知", ""):
+        try:
+            resp = httpx.get("http://ip-api.com/json/?lang=zh-CN", timeout=3)
+            data = resp.json()
+            if data.get("status") == "success":
+                departure = data.get("city", "")
+                if departure:
+                    from app.api.weather import _EN_TO_CN_CITY
+                    departure = _EN_TO_CN_CITY.get(departure, departure)
+                    from app.services.memory_service import save_memory
+                    save_memory(device_id, "travel_profile", "departure_city", departure)
+        except Exception:
+            pass
+
+    # 出发地=目的地 → 本地游，不需要大交通
+    if departure and departure == destination:
+        departure = ""
+
+    try:
+        from app.services.transport_service import get_transport_text
+        transport_text = get_transport_text(departure, destination, group_size, budget_tier)
+    except Exception:
+        logger.warning("交通推荐生成失败，跳过")
+        transport_text = "无交通推荐数据。"
+
     prompt = TRIP_PLAN_PROMPT.format(
         destination=destination,
         days=days,
@@ -181,6 +231,7 @@ async def generate_trip_plan(
         style_instructions=style_instructions,
         knowledge_text=knowledge_text,
         health_text=health_text,
+        transport_text=transport_text,
     )
 
     # 动态 token：天数越多需要越多 token 输出 JSON
@@ -249,15 +300,18 @@ async def generate_trip_plan(
             day["day_index"] = plan_dict["days"].index(day) + 1
         if not day.get("theme"):
             day["theme"] = f"Day {day['day_index']}"
-    # 修复预算：负数→0，other 重算
+    # 修复预算：所有数字必须 >= 0，total 永远重新算
     bb = plan_dict.setdefault("budget_breakdown", {})
     for k in ("transport", "hotel", "meals", "tickets", "other"):
-        if bb.get(k, 0) < 0:
+        if not isinstance(bb.get(k), (int, float)) or bb[k] < 0:
             bb[k] = 0
-    total = bb.get("total", 0)
-    if total > 0:
-        bb["other"] = max(0, total - bb.get("transport", 0) - bb.get("hotel", 0) - bb.get("meals", 0) - bb.get("tickets", 0))
-        bb["total"] = bb["transport"] + bb["hotel"] + bb["meals"] + bb["tickets"] + bb["other"]
+    # other 可能为负（LLM算术错误），强制重算
+    bb["other"] = max(0, bb.get("total", 0) - bb.get("transport", 0) - bb.get("hotel", 0) - bb.get("meals", 0) - bb.get("tickets", 0))
+    # total 永远用各项之和，不信任LLM
+    bb["total"] = bb["transport"] + bb["hotel"] + bb["meals"] + bb["tickets"] + bb["other"]
+    # estimated_budget 也强制 >= 0
+    if not isinstance(plan_dict.get("estimated_budget"), (int, float)) or plan_dict["estimated_budget"] < 0:
+        plan_dict["estimated_budget"] = bb["total"]
 
     # Pydantic 校验
     itinerary = Itinerary(**plan_dict)
