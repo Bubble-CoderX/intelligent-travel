@@ -75,6 +75,58 @@ function handleKeydown(e: KeyboardEvent) {
     handleSend()
   }
 }
+
+// ── O8: 图片文件上传 ──────────────────────────────────
+const fileInput = ref<any>(null)
+const uploading = ref(false)
+
+function triggerFileUpload() {
+  fileInput.value?.click()
+}
+
+async function handleFileUpload(e: any) {
+  const target = e.target
+  const file = target.files?.[0]
+  if (!file) return
+
+  // 限制大小 10MB
+  if (file.size > 10 * 1024 * 1024) {
+    alert('文件太大，请选择 10MB 以内的图片')
+    return
+  }
+
+  uploading.value = true
+  try {
+    const reader = new FileReader()
+    reader.onload = async () => {
+      const base64 = (reader.result as string).split(',')[1]
+      try {
+        const res = await fetch('http://localhost:8000/chat/image', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            device_id: localStorage.getItem('travelmate_device_id') || '',
+            image_base64: base64,
+            filename: file.name,
+            question: `请分析这张图片（${file.name}）`,
+          }),
+        })
+        const data = await res.json()
+        // 将分析结果作为用户可见的消息添加到聊天中
+        emit('send', `[已上传图片: ${file.name}]`)
+        // 手动触发一次带图片描述的对话
+        setTimeout(() => emit('send', `我上传了一张图片，分析结果：${data.reply?.substring(0, 200) || '分析完成'}`), 100)
+      } catch (err) {
+        console.error('图片分析失败', err)
+      }
+      uploading.value = false
+    }
+    reader.readAsDataURL(file)
+  } catch {
+    uploading.value = false
+  }
+  target.value = '' // 重置 input
+}
 </script>
 
 <template>
@@ -113,6 +165,17 @@ function handleKeydown(e: KeyboardEvent) {
           <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
           <line x1="12" x2="12" y1="19" y2="22" />
         </svg>
+      </button>
+
+      <!-- O8: 图片上传按钮 -->
+      <input ref="fileInput" type="file" accept="image/*" class="hidden" @change="handleFileUpload" />
+      <button
+        :disabled="disabled || uploading"
+        class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-stone-300 text-stone-400 transition-colors hover:bg-stone-50 dark:border-stone-600 dark:hover:bg-[#2f2f2f]"
+        title="上传图片"
+        @click="triggerFileUpload"
+      >
+        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
       </button>
 
       <!-- 发送按钮 -->

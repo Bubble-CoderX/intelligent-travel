@@ -170,7 +170,10 @@ export const useChatStore = defineStore('chat', () => {
     }
 
     isLoading.value = true
+    const assistantMsgId = crypto.randomUUID()
+
     try {
+      // O9: 尝试流式输出
       const payload: Record<string, any> = {
         message: content,
         device_id: getDeviceId(),
@@ -178,33 +181,124 @@ export const useChatStore = defineStore('chat', () => {
       }
       if (tripStyle) payload.trip_style = tripStyle
 
-      const res = await api.post('/chat', payload)
-      const data = res.data
-      addMessage({
-        id: crypto.randomUUID(),
-        role: 'assistant',
-        content: data.reply,
-        timestamp: Date.now(),
-        type: data.message_type ?? 'text',
-        metadata: data.metadata,
+      const response = await fetch('http://localhost:8000/chat/stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
       })
+
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+
+      const reader = response.body?.getReader()
+      if (!reader) throw new Error('无法读取响应流')
+
+      const decoder = new TextDecoder()
+      let fullContent = ''
+      let intent = 'CHAT'
+      let msgType = 'text'
+      let metadata: Record<string, unknown> = {}
+      let buffer = ''
+
+      // 先创建空的 assistant 消息（显示打字中）
+      addMessage({
+        id: assistantMsgId,
+        role: 'assistant',
+        content: '',
+        timestamp: Date.now(),
+        type: 'text',
+      })
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() ?? ''
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          const dataStr = line.slice(6).trim()
+          if (dataStr === '[DONE]') continue
+
+          try {
+            const evt = JSON.parse(dataStr)
+            if (evt.type === 'chunk') {
+              fullContent += evt.content
+              // 更新消息内容（实时打字效果）
+              const msg = messages.value.find(m => m.id === assistantMsgId)
+              if (msg) msg.content = fullContent
+            } else if (evt.type === 'full') {
+              // 整体返回（TRIP_PLAN 等）
+              fullContent = evt.content
+              intent = evt.intent ?? 'CHAT'
+              metadata = evt.metadata ?? {}
+              msgType = intent === 'TRIP_PLAN' ? 'card' : 'text'
+              const msg = messages.value.find(m => m.id === assistantMsgId)
+              if (msg) {
+                msg.content = fullContent
+                msg.type = msgType as any
+                msg.metadata = metadata
+              }
+            } else if (evt.type === 'error') {
+              fullContent = evt.content
+              const msg = messages.value.find(m => m.id === assistantMsgId)
+              if (msg) { msg.content = fullContent; (msg as any).failed = true }
+            }
+          } catch { /* ignore parse errors */ }
+        }
+      }
+
+      // 流结束，保存消息（通过非流式接口同步）
+      // 注意：流式接口的保存由后端处理，这里不需要额外保存
       loadSessions()
+
     } catch (err: any) {
-      // 无 response 即请求未到达服务器 → 网络错误
-      const noResponse = !err.response
-      const isNetwork = noResponse
-        || err?.code === 'ERR_NETWORK'
-        || err?.code === 'ECONNREFUSED'
-        || err?.message?.includes('Network Error')
-        || err?.message?.includes('Connection refused')
-      const isTimeout = err?.code === 'ECONNABORTED' || err?.message?.includes('timeout')
+      // 流式失败 → 降级到非流式
+      console.warn('[Stream] 流式失败，降级到非流式:', err?.message)
+      try {
+        const payload: Record<string, any> = {
+          message: content,
+          device_id: getDeviceId(),
+          session_id: sessionId.value,
+        }
+        if (tripStyle) payload.trip_style = tripStyle
 
-      let errorType: Message['errorType'] = 'server'
-      if (isNetwork) errorType = 'network'
-      else if (isTimeout) errorType = 'timeout'
+        const res = await api.post('/chat', payload)
+        const data = res.data
 
-      console.error('[sendMessage] 请求失败:', { errorType, code: err?.code, message: err?.message, noResponse })
-      markFailed(userMsgId, errorType)
+        // 移除流式创建的空消息，替换为完整回复
+        const idx = messages.value.findIndex(m => m.id === assistantMsgId)
+        if (idx >= 0) {
+          messages.value[idx].content = data.reply
+          messages.value[idx].type = data.message_type ?? 'text'
+          messages.value[idx].metadata = data.metadata
+        } else {
+          addMessage({
+            id: assistantMsgId,
+            role: 'assistant',
+            content: data.reply,
+            timestamp: Date.now(),
+            type: data.message_type ?? 'text',
+            metadata: data.metadata,
+          })
+        }
+        loadSessions()
+      } catch (err2: any) {
+        const noResponse = !err2.response
+        const isNetwork = noResponse || err2?.code === 'ERR_NETWORK' || err2?.message?.includes('Network Error')
+        const isTimeout = err2?.code === 'ECONNABORTED' || err2?.message?.includes('timeout')
+        let errorType: Message['errorType'] = 'server'
+        if (isNetwork) errorType = 'network'
+        else if (isTimeout) errorType = 'timeout'
+
+        const idx = messages.value.findIndex(m => m.id === assistantMsgId)
+        if (idx >= 0) {
+          messages.value[idx].content = '抱歉，处理消息时出现了问题。'
+          messages.value[idx].failed = true
+          ;(messages.value[idx] as any).errorType = errorType
+        }
+      }
     } finally {
       isLoading.value = false
     }
