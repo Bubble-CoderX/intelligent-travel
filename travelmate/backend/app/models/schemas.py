@@ -85,6 +85,7 @@ class SpotItem(BaseModel):
     estimated_cost: float = Field(default=0.0, ge=0, description="预估花费")
     location: str | None = Field(default=None, description="景点位置描述")
     image_url: str | None = Field(default=None, description="景点图片地址")
+    photo_url: str | None = Field(default=None, description="高德实景照片URL")
     address: str | None = Field(default=None, description="景点详细地址")
     latitude: float | None = Field(default=None, description="景点纬度")
     longitude: float | None = Field(default=None, description="景点经度")

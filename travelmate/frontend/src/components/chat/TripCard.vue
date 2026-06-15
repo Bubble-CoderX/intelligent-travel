@@ -366,8 +366,15 @@ const mealEmoji = (type: string) => {
 
               <!-- 景点卡片 -->
               <div class="flex-1 rounded-xl border border-stone-100 bg-stone-50/50 p-3 dark:border-stone-800 dark:bg-[#1e1e1e]/50">
-                <h5 class="text-sm font-semibold text-stone-800 dark:text-stone-100">{{ spot.name }}</h5>
-                <p v-if="spot.description" class="mt-1 text-xs leading-relaxed text-stone-600 dark:text-stone-300">{{ spot.description }}</p>
+                <div class="flex gap-3">
+                  <div v-if="spot.photo_url" class="h-16 w-16 shrink-0 overflow-hidden rounded-lg">
+                    <img :src="spot.photo_url" :alt="spot.name" class="h-full w-full object-cover" @error="($event.target as HTMLImageElement).style.display='none'" />
+                  </div>
+                  <div class="min-w-0 flex-1">
+                    <h5 class="text-sm font-semibold text-stone-800 dark:text-stone-100">{{ spot.name }}</h5>
+                    <p v-if="spot.description" class="mt-1 text-xs leading-relaxed text-stone-600 dark:text-stone-300">{{ spot.description }}</p>
+                  </div>
+                </div>
                 <div v-if="spot.address" class="mt-2 flex items-center gap-1 text-[11px] text-stone-400 dark:text-stone-500">
                   📍 {{ spot.address }}
                 </div>

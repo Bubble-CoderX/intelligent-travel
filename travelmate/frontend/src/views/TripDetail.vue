@@ -58,11 +58,18 @@ onMounted(fetchTrip)
               class="rounded-lg border p-3"
               :class="props.dark ? 'border-stone-700 bg-[#2a2a2a]' : 'border-stone-100 bg-white'"
             >
-              <div class="flex items-center justify-between">
-                <span class="text-xs" :class="props.dark ? 'text-stone-500' : 'text-stone-400'">{{ spot.start_time }}-{{ spot.end_time }}</span>
+              <div class="flex gap-3">
+                <div v-if="spot.photo_url" class="h-16 w-16 shrink-0 overflow-hidden rounded-lg">
+                  <img :src="spot.photo_url" :alt="spot.name" class="h-full w-full object-cover" @error="($event.target as HTMLImageElement).style.display='none'" />
+                </div>
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs" :class="props.dark ? 'text-stone-500' : 'text-stone-400'">{{ spot.start_time }}-{{ spot.end_time }}</span>
+                  </div>
+                  <div class="font-medium" :class="props.dark ? 'text-stone-200' : 'text-stone-800'">{{ spot.name }}</div>
+                  <div class="mt-1 text-xs" :class="props.dark ? 'text-stone-400' : 'text-stone-500'">{{ spot.description }}</div>
+                </div>
               </div>
-              <div class="font-medium" :class="props.dark ? 'text-stone-200' : 'text-stone-800'">{{ spot.name }}</div>
-              <div class="mt-1 text-xs" :class="props.dark ? 'text-stone-400' : 'text-stone-500'">{{ spot.description }}</div>
               <div v-if="spot.tips" class="mt-1 text-xs text-amber-600 dark:text-amber-400">💡 {{ spot.tips }}</div>
             </div>
             <!-- 餐饮 -->

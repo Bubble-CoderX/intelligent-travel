@@ -322,7 +322,19 @@ async def generate_trip_plan(
     )
     _save_trip_to_db(device_id, destination, days, itinerary_json_str)
 
-    # O16: 同步保存到 trip_history（用于历史记录展示页）
+    # O22: 先补充照片，再保存到 history（确保历史记录包含照片）
+    try:
+        from app.services.photo_service import enrich_itinerary_with_photos
+        itinerary_dict = itinerary.model_dump()
+        itinerary_dict = await enrich_itinerary_with_photos(itinerary_dict)
+        for i, day in enumerate(itinerary_dict.get("days", [])):
+            for j, spot in enumerate(day.get("spots", [])):
+                if spot.get("photo_url") and i < len(itinerary.days):
+                    itinerary.days[i].spots[j].photo_url = spot["photo_url"]
+    except Exception:
+        logger.debug("景点照片补充失败（非致命）")
+
+    # O16: 保存到 trip_history（此时 itinerary 已包含照片）
     try:
         from app.api.trip_history import save_trip_history
         history_data = itinerary.model_dump()
