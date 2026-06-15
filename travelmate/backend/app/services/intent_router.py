@@ -94,6 +94,35 @@ def _get_user_preferences(device_id: str) -> str:
     return f"## 出行档案\n{profile_text}\n\n## 通用偏好\n{legacy_text}"
 
 
+# ── 中文数字解析 ────────────────────────────────────────
+_CN_NUM_MAP = {"零": 0, "一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5,
+               "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}
+
+def _parse_chinese_days(text) -> int:
+    """解析中文天数（如"三天"→3, "十五天"→15），解析失败返回0。"""
+    if not text:
+        return 0
+    s = str(text).strip().replace("天", "").replace("日", "")
+    # 纯阿拉伯数字
+    try:
+        return int(s)
+    except (ValueError, TypeError):
+        pass
+    # "十X" 形式，如 "十二"
+    if len(s) == 2 and s[0] == "十":
+        return 10 + _CN_NUM_MAP.get(s[1], 0)
+    # "X十" 形式，如 "二十"
+    if len(s) == 2 and s[1] == "十":
+        return _CN_NUM_MAP.get(s[0], 0) * 10
+    # "X十Y" 形式，如 "十五"
+    if len(s) == 3 and s[1] == "十":
+        return _CN_NUM_MAP.get(s[0], 0) * 10 + _CN_NUM_MAP.get(s[2], 0)
+    # 单字，如 "三"
+    if len(s) == 1:
+        return _CN_NUM_MAP.get(s, 0)
+    return 0
+
+
 async def route_intent(user_message: str, device_id: str, session_id: str | None = None, trip_style: str | None = None) -> dict:
     """
     完整意图识别管道：
@@ -251,20 +280,30 @@ async def route_intent(user_message: str, device_id: str, session_id: str | None
             if safety.get("level") in ("WARN", "URGENT") and safety.get("warning"):
                 reply = f"请注意：{safety['warning']}\n\n{reply}"
         else:
-            # URGENT 场景：优先安全，暂不生成完整行程
-            if safety.get("level") == "URGENT":
-                reply = f"{safety.get('warning', '')}\n\n当前不适宜生成完整行程计划，请先确保安全情况。"
-            else:
-                try:
-                    result = await generate_trip_plan(device_id, destination, int(trip_days), style=trip_style or "default")
-                    reply = result["summary"]
-                    # 保存结构化数据到 extracted，供 chat.py 写入 metadata
-                    extracted["_trip_plan"] = result.get("itinerary_json")
-                    if safety.get("level") == "WARN" and safety.get("warning"):
-                        reply = f"> {safety['warning']}\n\n{reply}"
-                except Exception as exc:
-                    logger.warning("行程生成失败：%s", exc)
-                    reply = f"生成{destination}行程时遇到了问题：{type(exc).__name__}。请稍后再试。"
+            # 中文天数 → 阿拉伯数字
+            try:
+                days_num = int(trip_days)
+            except (ValueError, TypeError):
+                days_num = _parse_chinese_days(trip_days)
+
+            if days_num <= 0 or days_num > 30:
+                reply = f"天数{trip_days}不太合理，请告诉我1-30天之间的天数～"
+                days_num = 0
+
+            if days_num:
+                # URGENT 场景：优先安全，暂不生成完整行程
+                if safety.get("level") == "URGENT":
+                    reply = f"{safety.get('warning', '')}\n\n当前不适宜生成完整行程计划，请先确保安全情况。"
+                else:
+                    try:
+                        result = await generate_trip_plan(device_id, destination, days_num, style=trip_style or "default")
+                        reply = result["summary"]
+                        extracted["_trip_plan"] = result.get("itinerary_json")
+                        if safety.get("level") == "WARN" and safety.get("warning"):
+                            reply = f"> {safety['warning']}\n\n{reply}"
+                    except Exception as exc:
+                        logger.warning("行程生成失败：%s", exc)
+                        reply = f"生成{destination}行程时遇到了问题：{type(exc).__name__}。请稍后再试。"
 
     # 阶段五：WEATHER 意图 → 调用天气服务
     elif intent == "WEATHER":

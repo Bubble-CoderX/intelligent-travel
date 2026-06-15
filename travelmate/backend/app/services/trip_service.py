@@ -118,18 +118,28 @@ async def generate_trip_plan(
     weather_text = _format_weather_text(destination)
     style_instructions = STYLE_INSTRUCTIONS.get(style, "")
 
-    # ── O2: 知识库 RAG 检索 ─────────────────────────────
+    # ── O2: 知识库 RAG 检索（无则自动调研） ─────────────
+    knowledge_text = ""
     try:
-        knowledge_results = retrieve_knowledge(destination, top_k=10)
+        # 先精确匹配目的地名称（避免语义搜索返回其他城市的脏数据）
+        knowledge_results = retrieve_knowledge(destination, spot_name=destination, top_k=10)
+        if not knowledge_results:
+            # 精确匹配无结果 → 自动调研生成并入库
+            logger.info("知识库中无「%s」，启动自动调研...", destination)
+            from app.services.knowledge_expander import auto_expand
+            expand_result = await auto_expand(destination)
+            if expand_result.get("status") == "ok":
+                logger.info("自动调研完成：%s → %d 个段落", destination, expand_result.get("chunk_count", 0))
+                knowledge_results = retrieve_knowledge(destination, spot_name=destination, top_k=10)
         if knowledge_results:
             knowledge_text = "\n\n".join(
                 f"### {r.get('spot_name', '')}\n{r.get('text', '')}"
                 for r in knowledge_results
             )
         else:
-            knowledge_text = "暂无该目的地的知识库数据，以下推荐基于AI通用知识，信息可能不够准确。"
+            knowledge_text = "暂无知识库数据，基于AI通用知识推荐。"
     except Exception:
-        logger.warning("RAG 检索失败，降级为空知识库")
+        logger.warning("知识库检索/调研失败，降级为空知识库")
         knowledge_text = "暂无知识库数据，基于AI通用知识推荐。"
 
     # ── O1: 出行档案注入 ───────────────────────────────
@@ -173,18 +183,34 @@ async def generate_trip_plan(
         health_text=health_text,
     )
 
+    # 动态 token：天数越多需要越多 token 输出 JSON
+    dynamic_tokens = min(3000 + days * 500, 6000)
+
     raw = await call_llm(
         messages=[{"role": "user", "content": f"请为我规划一份{destination}{days}天的旅行行程"}],
         system_prompt=prompt,
         temperature=0.7,
-        max_tokens=3000,
+        max_tokens=dynamic_tokens,
     )
 
-    # 解析 JSON
+    # 解析 JSON，失败则重试一次（LLM 有时输出不规范）
     try:
         plan_dict = _parse_trip_json(raw, destination)
-    except ValueError as exc:
-        logger.warning("行程 JSON 解析失败：%s", exc)
+    except ValueError:
+        logger.warning("行程 JSON 首次解析失败，重试一次")
+        raw = await call_llm(
+            messages=[{
+                "role": "user",
+                "content": f"请为我规划一份{destination}{days}天的旅行行程。请严格输出JSON格式，不要包裹在代码块中。"
+            }],
+            system_prompt=prompt,
+            temperature=0.3,
+            max_tokens=dynamic_tokens,
+        )
+        try:
+            plan_dict = _parse_trip_json(raw, destination)
+        except ValueError as exc:
+            logger.warning("行程 JSON 重试仍失败：%s", exc)
         return {
             "trip_id": "",
             "destination": destination,
@@ -198,22 +224,43 @@ async def generate_trip_plan(
     plan_dict["trip_id"] = trip_id
     plan_dict["destination"] = destination
 
-    # Pydantic 校验（自动补全缺失字段默认值）
-    try:
-        itinerary = Itinerary(**plan_dict)
-    except Exception as e:
-        logger.warning("Pydantic 校验失败：%s → 尝试部分修复", e)
-        # 尝试手动补全常见缺失字段
-        for key in ("trip_id", "destination", "summary"):
-            if key not in plan_dict:
-                plan_dict[key] = ""
-        plan_dict["trip_id"] = trip_id
-        plan_dict["destination"] = destination
-        if "days" not in plan_dict:
-            plan_dict["days"] = []
-        if "estimated_budget" not in plan_dict:
-            plan_dict["estimated_budget"] = 0
-        itinerary = Itinerary(**plan_dict)
+    # ── LLM 输出清洗（校验前执行，避免无意义的失败重试）──
+    # 补全顶层缺失字段
+    for key in ("trip_id", "destination", "summary"):
+        if not plan_dict.get(key):
+            plan_dict[key] = ""
+    plan_dict["trip_id"] = trip_id
+    plan_dict["destination"] = destination
+    if "estimated_budget" not in plan_dict:
+        plan_dict["estimated_budget"] = 0
+    # 清洗每天数据
+    for day in plan_dict.get("days", []):
+        if not isinstance(day, dict):
+            continue
+        hotel = day.get("hotel")
+        if hotel and isinstance(hotel, dict) and not hotel.get("name"):
+            day["hotel"] = None
+        elif hotel is None:
+            day["hotel"] = None
+        for arr_key in ("spots", "meals", "transport"):
+            if not day.get(arr_key):
+                day[arr_key] = []
+        if not day.get("day_index"):
+            day["day_index"] = plan_dict["days"].index(day) + 1
+        if not day.get("theme"):
+            day["theme"] = f"Day {day['day_index']}"
+    # 修复预算：负数→0，other 重算
+    bb = plan_dict.setdefault("budget_breakdown", {})
+    for k in ("transport", "hotel", "meals", "tickets", "other"):
+        if bb.get(k, 0) < 0:
+            bb[k] = 0
+    total = bb.get("total", 0)
+    if total > 0:
+        bb["other"] = max(0, total - bb.get("transport", 0) - bb.get("hotel", 0) - bb.get("meals", 0) - bb.get("tickets", 0))
+        bb["total"] = bb["transport"] + bb["hotel"] + bb["meals"] + bb["tickets"] + bb["other"]
+
+    # Pydantic 校验
+    itinerary = Itinerary(**plan_dict)
 
     # 存储
     itinerary_json_str = json.dumps(
