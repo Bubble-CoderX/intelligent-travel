@@ -12,19 +12,20 @@ const completeResult = ref<{ total: number; success: number; failed: number } | 
 
 const API_BASE = 'http://localhost:8000'
 
-const CATEGORIES = ['景点', '非遗文化', '美食', '民俗', '历史遗址', '名山大川', '古城古镇', '博物馆'] as const
-const selectedCategory = ref<string>('景点')
+const CATEGORIES = ['城市', '景点', '非遗文化', '美食', '民俗', '历史遗址', '名山大川', '古城古镇', '博物馆'] as const
+const selectedCategory = ref<string>('城市')
 const generatingPresets = ref(false)
 
 const CATEGORY_PLACEHOLDERS: Record<string, string> = {
-  '景点': '西湖，九寨沟，张家界',
-  '非遗文化': '京剧，皮影戏，景德镇陶瓷',
-  '美食': '广州早茶，成都火锅，北京烤鸭',
-  '民俗': '苗族银饰，藏族唐卡，春节庙会',
-  '历史遗址': '莫高窟，三星堆，殷墟',
-  '名山大川': '黄山，泰山，长白山',
-  '古城古镇': '平遥古城，乌镇，凤凰古城',
-  '博物馆': '故宫博物院，国家博物馆，敦煌研究院',
+  '城市': '广州，北京，成都，上海，杭州',
+  '景点': '西湖，故宫，黄果树瀑布，兵马俑，鼓浪屿',
+  '非遗文化': '京剧，皮影戏，景德镇陶瓷，苏绣，京剧脸谱',
+  '美食': '广州早茶，成都火锅，北京烤鸭，兰州拉面，重庆小面',
+  '民俗': '苗族银饰，藏族唐卡，春节庙会，端午龙舟，中秋灯会',
+  '历史遗址': '莫高窟，三星堆，殷墟，长城，圆明园',
+  '名山大川': '黄山，泰山，长白山，华山，峨眉山',
+  '古城古镇': '平遥古城，乌镇，凤凰古城，丽江古城，周庄',
+  '博物馆': '故宫博物院，国家博物馆，敦煌研究院，陕西历史博物馆，南京博物院',
 }
 
 function parseSpots(): string[] {

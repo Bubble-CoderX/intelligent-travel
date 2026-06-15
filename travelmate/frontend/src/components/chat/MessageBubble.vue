@@ -89,14 +89,28 @@ function speakMsg() {
   toggleSpeak()
   closeMenu()
 }
+
+function formatTime(ts: number): string {
+  const d = new Date(ts)
+  const h = String(d.getHours()).padStart(2, '0')
+  const m = String(d.getMinutes()).padStart(2, '0')
+  return `${h}:${m}`
+}
 </script>
 
 <template>
   <div
-    class="flex w-full msg-slide-in py-2"
+    class="flex w-full msg-slide-in items-center gap-2 py-2"
     :class="isUser ? 'justify-end' : 'justify-start'"
     @contextmenu="openMenu"
   >
+    <!-- 用户消息：时间在左侧 -->
+    <span
+      v-if="isUser && message.timestamp"
+      class="text-[11px] shrink-0 text-stone-400 dark:text-stone-500"
+    >
+      {{ formatTime(message.timestamp) }}
+    </span>
     <!-- 系统消息 -->
     <div
       v-if="isSystem"
@@ -228,5 +242,13 @@ function speakMsg() {
         </button>
       </div>
     </Teleport>
+
+    <!-- AI消息：时间在右侧 -->
+    <span
+      v-if="!isUser && !isSystem && message.timestamp"
+      class="text-[11px] shrink-0 text-stone-400 dark:text-stone-500"
+    >
+      {{ formatTime(message.timestamp) }}
+    </span>
   </div>
 </template>
