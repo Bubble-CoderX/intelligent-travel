@@ -10,7 +10,7 @@ from app.services.context_service import get_recent_history
 from app.services.llm_client import call_llm
 from app.services.map_service import search_places
 from app.services.memory_service import get_all_preferences, query_memory, save_memory
-from app.services.profile_extractor import extract_travel_profile, get_travel_profile_text
+from app.services.profile_extractor import extract_travel_profile, get_travel_profile_text, _get_profile_field
 from app.services.rag_service import query_knowledge
 from app.services.regex_matcher import regex_match
 from app.services.trip_service import generate_trip_plan, query_trip_plans
@@ -188,11 +188,39 @@ async def route_intent(user_message: str, device_id: str, session_id: str | None
         cat = extracted.get("category", "通用")
         key = extracted.get("key", "")
         val = extracted.get("value", "")
-        saved = save_memory(device_id, cat, key, val)
-        if saved:
-            reply = f"好的，已记住你的偏好：{val}。之后的推荐会参考它～"
+
+        # value 为空 → 查询意图（如"我的过敏史"），查找已有偏好回复
+        if not val:
+            # 中文key → travel_profile key 映射
+            _CN_TO_PROFILE_KEY = {
+                "过敏史": "allergies", "饮食忌口": "dietary", "旅行风格": "travel_style",
+                "住宿偏好": "accommodation", "日均预算": "budget_daily", "预算等级": "budget_tier",
+                "兴趣标签": "interests", "出行人数": "group_size", "人员构成": "composition",
+                "特殊需求": "special_needs", "出行方式": "transport_preference",
+            }
+            profile_key = _CN_TO_PROFILE_KEY.get(key)
+            if profile_key:
+                val = _get_profile_field(device_id, profile_key, "")
+                if val:
+                    # 列表型值格式化
+                    if isinstance(val, list):
+                        val = "、".join(str(v) for v in val)
+                    reply = f"你当前的{key}设置是：{val}。"
+                else:
+                    reply = f"目前还没有设置过「{key}」，你可以告诉我，我帮你记下～"
+            else:
+                existing_prefs = get_all_preferences(device_id)
+                found = [p for p in existing_prefs if p.get("key") == key]
+                if found:
+                    reply = f"你当前的{key}设置是：{found[0]['value']}。"
+                else:
+                    reply = f"目前还没有设置过「{key}」，你可以告诉我，我帮你记下～"
         else:
-            reply = f"收到你的偏好：{key} - {val}，但保存时遇到了问题。"
+            saved = save_memory(device_id, cat, key, str(val))
+            if saved:
+                reply = f"好的，已记住你的偏好：{val}。之后的推荐会参考它～"
+            else:
+                reply = f"收到你的偏好：{key} - {val}，但保存时遇到了问题。"
 
     # 阶段六：TRIP_PLAN 意图 → 调用行程生成服务
     elif intent == "TRIP_PLAN":

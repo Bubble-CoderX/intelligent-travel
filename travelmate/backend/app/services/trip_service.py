@@ -12,6 +12,8 @@ from app.models.schemas import BudgetBreakdown, DayPlan, Itinerary, SpotItem, Me
 from app.services.llm_client import call_llm
 from app.services.map_service import search_places
 from app.services.memory_service import get_all_preferences
+from app.services.profile_extractor import get_travel_profile_text, _get_profile_field
+from app.services.rag_service import retrieve_knowledge
 from app.services.weather_service import get_weather_forecast
 from app.utils.trip_prompts import TRIP_PLAN_PROMPT, STYLE_INSTRUCTIONS
 
@@ -110,20 +112,65 @@ async def generate_trip_plan(
 ) -> dict[str, Any]:
     """
     完整行程生成流程：
-    收集数据 → 组装 Prompt → 调用 LLM → 解析 JSON → Pydantic 校验 → 存储 → 返回
+    收集数据(POI+天气+知识库+出行档案) → 组装 Prompt → 调用 LLM → 解析 JSON → 存储
     """
     poi_text = _format_poi_text(destination)
     weather_text = _format_weather_text(destination)
-    preferences_text = _format_preferences_text(device_id)
     style_instructions = STYLE_INSTRUCTIONS.get(style, "")
+
+    # ── O2: 知识库 RAG 检索 ─────────────────────────────
+    try:
+        knowledge_results = retrieve_knowledge(destination, top_k=10)
+        if knowledge_results:
+            knowledge_text = "\n\n".join(
+                f"### {r.get('spot_name', '')}\n{r.get('text', '')}"
+                for r in knowledge_results
+            )
+        else:
+            knowledge_text = "暂无该目的地的知识库数据，以下推荐基于AI通用知识，信息可能不够准确。"
+    except Exception:
+        logger.warning("RAG 检索失败，降级为空知识库")
+        knowledge_text = "暂无知识库数据，基于AI通用知识推荐。"
+
+    # ── O1: 出行档案注入 ───────────────────────────────
+    travel_profile_text = get_travel_profile_text(device_id)
+
+    # ── O2: 健康信息提取 ───────────────────────────────
+    allergies = _get_profile_field(device_id, "allergies", [])
+    special_needs = _get_profile_field(device_id, "special_needs", [])
+    composition = _get_profile_field(device_id, "composition", "")
+    child_age = _get_profile_field(device_id, "child_age", "")
+    elder_count = _get_profile_field(device_id, "elder_count", "")
+
+    health_parts = []
+    if allergies:
+        allergy_str = "、".join(allergies) if isinstance(allergies, list) else str(allergies)
+        health_parts.append(f"- 过敏史：{allergy_str}")
+        if "花粉过敏" in (allergies if isinstance(allergies, list) else []):
+            health_parts.append("  → 花粉过敏：避免推荐花海/花卉密集景区")
+        if "季节性鼻炎" in (allergies if isinstance(allergies, list) else []):
+            health_parts.append("  → 鼻炎：避免推荐沙尘大/油烟重的区域")
+    if special_needs:
+        needs_str = "、".join(special_needs) if isinstance(special_needs, list) else str(special_needs)
+        health_parts.append(f"- 特殊需求：{needs_str}")
+        if "携带婴儿" in (special_needs if isinstance(special_needs, list) else []):
+            health_parts.append("  → 携带婴儿：每2小时安排休息点，推荐有母婴室的景点")
+    if composition == "family_child" and child_age:
+        health_parts.append(f"- 带{child_age}岁儿童出行：行程节奏放缓，每天安排休息时间")
+    if composition == "family_elder" and elder_count:
+        health_parts.append(f"- 带{elder_count}位老人出行：避免爬山/走栈道，优先无障碍景点")
+
+    health_text = "\n".join(health_parts) if health_parts else "无特殊健康或人群需求"
 
     prompt = TRIP_PLAN_PROMPT.format(
         destination=destination,
         days=days,
         poi_text=poi_text,
         weather_text=weather_text,
-        preferences_text=preferences_text,
+        travel_profile_text=travel_profile_text,
         style_instructions=style_instructions,
+        knowledge_text=knowledge_text,
+        health_text=health_text,
     )
 
     raw = await call_llm(
