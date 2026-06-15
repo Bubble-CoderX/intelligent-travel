@@ -88,3 +88,30 @@ def init_db() -> None:
     """)
     conn.commit()
     conn.close()
+
+    # O16: 行程历史记录表
+    conn = get_db()
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS trip_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            device_id TEXT NOT NULL,
+            session_id TEXT,
+            title TEXT NOT NULL DEFAULT '',
+            destination TEXT NOT NULL DEFAULT '',
+            departure_city TEXT DEFAULT '',
+            days INTEGER DEFAULT 0,
+            group_size INTEGER DEFAULT 2,
+            composition TEXT DEFAULT '',
+            budget_total REAL DEFAULT 0,
+            itinerary_json TEXT,
+            status TEXT DEFAULT 'planned',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_trip_history_device "
+        "ON trip_history(device_id, created_at DESC)"
+    )
+    conn.commit()
+    conn.close()

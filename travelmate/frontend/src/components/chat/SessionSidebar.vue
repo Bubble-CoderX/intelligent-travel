@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { useChatStore } from '@/stores/chat'
 
 const store = useChatStore()
+const router = useRouter()
 const props = defineProps<{ dark?: boolean; toggleDark?: () => void }>()
 
 const renamingId = ref<string | null>(null)
@@ -141,6 +143,24 @@ function handleRenameKeydown(e: KeyboardEvent, sessionId: string) {
 
     <!-- 底部：功能区 -->
     <div class="border-t border-stone-200 px-3 py-2 dark:border-stone-700">
+      <button
+        class="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-700 dark:text-stone-400 dark:hover:bg-[#2f2f2f] dark:hover:text-stone-200"
+        @click="router.push('/trips')"
+      >
+        <span class="text-base">📋</span> 历史行程
+      </button>
+      <button
+        class="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-700 dark:text-stone-400 dark:hover:bg-[#2f2f2f] dark:hover:text-stone-200"
+        @click="router.push('/profile')"
+      >
+        <span class="text-base">👤</span> 我的档案
+      </button>
+      <button
+        class="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-700 dark:text-stone-400 dark:hover:bg-[#2f2f2f] dark:hover:text-stone-200"
+        @click="router.push('/knowledge')"
+      >
+        <span class="text-base">📚</span> 知识库浏览
+      </button>
       <button
         class="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-700 dark:text-stone-400 dark:hover:bg-[#2f2f2f] dark:hover:text-stone-200"
         @click="$emit('toggleBatchExpand')"

@@ -322,6 +322,17 @@ async def generate_trip_plan(
     )
     _save_trip_to_db(device_id, destination, days, itinerary_json_str)
 
+    # O16: 同步保存到 trip_history（用于历史记录展示页）
+    try:
+        from app.api.trip_history import save_trip_history
+        history_data = itinerary.model_dump()
+        history_data["group_size"] = group_size
+        history_data["composition"] = composition
+        history_data["departure_city"] = departure
+        save_trip_history(device_id, history_data)
+    except Exception:
+        logger.debug("行程历史保存失败（非致命）")
+
     return {
         "trip_id": itinerary.trip_id,
         "destination": destination,

@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { ref, onMounted, watchEffect } from 'vue'
-import ChatContainer from '@/components/chat/ChatContainer.vue'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { getDeviceId } from '@/utils/device'
 
@@ -50,6 +49,6 @@ onMounted(async () => {
     >
       实时连接中...
     </div>
-    <ChatContainer :dark="dark" :toggle-dark="toggleDark" />
+    <router-view :dark="dark" :toggle-dark="toggleDark" />
   </div>
 </template>
