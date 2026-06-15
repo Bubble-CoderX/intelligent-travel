@@ -26,6 +26,11 @@ const routes = [
     name: 'knowledge',
     component: () => import('@/views/KnowledgeBrowser.vue'),
   },
+  {
+    path: '/chat-history',
+    name: 'chat-history',
+    component: () => import('@/views/ChatHistory.vue'),
+  },
 ]
 
 const router = createRouter({
