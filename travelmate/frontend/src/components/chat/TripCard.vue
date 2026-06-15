@@ -94,7 +94,7 @@ interface TripPlan {
 const activeTab = ref<string>('overview')
 const bottomPanel = ref<'transport' | 'food' | 'accommodation' | null>(null)
 const showExportMenu = ref(false)
-const checklist = ref<{ categories: { name: string; icon: string; items: string[] }[] } | null>(null)
+const checklist = ref<{ categories: { name: string; icon: string; items: any[] }[] } | null>(null)
 const loadingChecklist = ref(false)
 
 async function genChecklist() {
@@ -269,7 +269,14 @@ const mealEmoji = (type: string) => {
         <div v-for="(cat, ci) in checklist.categories" :key="ci" class="rounded-lg bg-stone-50 p-3 dark:bg-[#1e1e1e]">
           <h5 class="mb-1.5 text-xs font-medium text-stone-600 dark:text-stone-300">{{ cat.icon }} {{ cat.name }}</h5>
           <ul class="space-y-0.5">
-            <li v-for="(item, ii) in cat.items" :key="ii" class="text-[11px] text-stone-500 dark:text-stone-400">• {{ item }}</li>
+            <li v-for="(item, ii) in cat.items" :key="ii" class="text-[11px] text-stone-500 dark:text-stone-400">
+              <template v-if="typeof item === 'object'">
+                <span v-if="item.essential" class="text-red-400">★</span>
+                {{ item.name }}
+                <span v-if="item.note" class="text-stone-400 dark:text-stone-500">（{{ item.note }}）</span>
+              </template>
+              <template v-else>• {{ item }}</template>
+            </li>
           </ul>
         </div>
       </div>

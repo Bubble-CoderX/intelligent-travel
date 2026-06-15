@@ -19,10 +19,13 @@ async def call_llm(
     system_prompt: str = "",
     temperature: float = 0.3,
     max_tokens: int = 2000,
+    model: str = "",
 ) -> str:
-    """调用 DeepSeek API。"""
+    """调用 DeepSeek API。model 为空时使用默认模型。"""
     if not DEEPSEEK_API_KEY:
         raise RuntimeError("未配置 DEEPSEEK_API_KEY，无法调用 LLM。")
+
+    use_model = model or DEEPSEEK_MODEL
 
     full_messages: list[dict] = []
     if system_prompt:
@@ -37,7 +40,7 @@ async def call_llm(
                 "Content-Type": "application/json",
             },
             json={
-                "model": DEEPSEEK_MODEL,
+                "model": use_model,
                 "messages": full_messages,
                 "temperature": temperature,
                 "max_tokens": max_tokens,

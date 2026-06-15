@@ -127,5 +127,9 @@ async def get_trip_checklist(trip_id: str):
         raise HTTPException(status_code=500, detail="行程数据损坏")
     destination = itinerary.get("destination", "")
     days = itinerary.get("days", 1) if isinstance(itinerary.get("days"), int) else len(itinerary.get("days", [])) or 1
-    checklist = await generate_checklist(destination, days)
+    composition = itinerary.get("composition", "")
+    allergies_raw = itinerary.get("allergies", "")
+    allergies = [a.strip() for a in allergies_raw.split(",") if a.strip()] if isinstance(allergies_raw, str) and allergies_raw else (allergies_raw if isinstance(allergies_raw, list) else [])
+    weather = itinerary.get("weather", "")
+    checklist = await generate_checklist(destination, days, weather=weather, composition=composition, allergies=allergies)
     return {"trip_id": trip_id, "checklist": checklist}
