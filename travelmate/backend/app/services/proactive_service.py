@@ -398,19 +398,101 @@ def shutdown_scheduler() -> None:
 
 # ── F8: 定时天气巡检 ──────────────────────────────────────
 
-PATROL_HOURS = [8, 20]  # 每天 08:00 和 20:00
+PATROL_HOURS = [8, 12, 20]  # 每天 08:00 / 12:00 / 20:00
+
+# ── O7: 推送冷却（同一异常1小时内不重复推送）──
+_push_cooldown: dict[str, float] = {}  # key=f"{device_id}:{rule_name}", value=timestamp
+COOLDOWN_SECONDS = 3600  # 1小时
+
+
+def _is_cooled_down(device_id: str, rule_name: str) -> bool:
+    """检查该异常是否在冷却期内。True=应跳过推送。"""
+    import time
+    key = f"{device_id}:{rule_name}"
+    last_push = _push_cooldown.get(key, 0)
+    return (time.time() - last_push) < COOLDOWN_SECONDS
+
+
+def _mark_pushed(device_id: str, rule_name: str) -> None:
+    """标记该异常已推送。"""
+    import time
+    _push_cooldown[f"{device_id}:{rule_name}"] = time.time()
 
 
 async def _weather_patrol_job(device_id: str, city: str) -> None:
-    """定时巡检任务：拉取天气→异常检测→推送通知。"""
+    """O7 完整联动链：天气→异常检测→TCI→阈值判断→推送/重排。"""
     try:
-        from app.services.weather_anomaly_detector import detect_and_push
-        report = await detect_and_push(city, device_id)
+        from app.services.weather_anomaly_detector import detect_anomalies
+        from app.services.weather_service import get_weather_with_fallback
 
-        if report.has_anomaly:
-            logger.info("巡检发现异常: city=%s, anomalies=%d", city, len(report.anomalies))
-        else:
+        # Step 1: 获取天气数据（O4 四级降级）
+        weather_data = await get_weather_with_fallback(city)
+
+        # Step 2: 异常检测（O5 四条规则）
+        report = detect_anomalies(weather_data, city)
+
+        if not report.has_anomaly:
             logger.info("巡检正常: city=%s", city)
+            return
+
+        # Step 3: 过滤冷却期内的异常
+        active_anomalies = [
+            a for a in report.anomalies
+            if not _is_cooled_down(device_id, a.rule_name)
+        ]
+        if not active_anomalies:
+            logger.info("巡检有异常但均在冷却期: city=%s", city)
+            return
+
+        # Step 4: TCI 重算（O6）
+        from app.services.comfort_index_service import calculate_tci, ComfortContext
+        today = weather_data.get("days", [{}])[0] if weather_data.get("days") else {}
+        try:
+            temp = int(today.get("day_temp", 20) or 20)
+        except (ValueError, TypeError):
+            temp = 20
+        ctx = ComfortContext(
+            city=city, temperature=temp,
+            weather_desc=today.get("day_weather", ""),
+            wind=today.get("day_wind", ""),
+            hour=datetime.now().hour,
+        )
+        tci = calculate_tci(ctx)
+
+        # Step 5: 构建推送消息
+        lines = [f"⚠️ {city}天气预警："]
+        for a in active_anomalies:
+            lines.append(f"  {a.title} — {a.suggestion}")
+            _mark_pushed(device_id, a.rule_name)
+
+        lines.append(f"\n🌡️ 当前旅行体感指数：{tci.score}分（{tci.level_emoji} {tci.level}）")
+
+        # Step 6: TCI ≥20分下降 → 附加行程重排建议
+        if tci.score < 60:
+            try:
+                from app.services.weather_linkage_engine import adjust_trip_by_weather
+                # 获取该设备最近的行程
+                from app.models.database import get_db
+                conn = get_db()
+                row = conn.execute(
+                    "SELECT itinerary_json FROM trip_plans WHERE device_id = ? ORDER BY created_at DESC LIMIT 1",
+                    (device_id,),
+                ).fetchone()
+                conn.close()
+                if row and row["itinerary_json"]:
+                    import json as _json
+                    trip_plan = _json.loads(row["itinerary_json"])
+                    result = await adjust_trip_by_weather(device_id, city, trip_plan, weather_data)
+                    if result.get("adjusted"):
+                        lines.append(f"\n📋 行程调整建议：\n{result['suggestion']}")
+            except Exception as e:
+                logger.warning("行程重排失败: %s", e)
+
+        message = "\n".join(lines)
+        await push_message(device_id, message, msg_type="weather_alert")
+        logger.info("O7联动推送: city=%s, device=%s, tci=%d(%s), anomalies=%d",
+                     city, device_id, tci.score, tci.level, len(active_anomalies))
+
     except Exception:
         logger.exception("天气巡检失败: device=%s, city=%s", device_id, city)
 

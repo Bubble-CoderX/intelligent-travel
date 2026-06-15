@@ -65,18 +65,32 @@ def _normalize_cache_text(value: str | None) -> str:
 # ── F1：天气数据持久化 ─────────────────────────────────────
 
 def _persist_weather(city: str, weather_data: dict) -> None:
-    """将天气快照写入 SQLite。"""
+    """将天气快照写入 SQLite，humidity 从实时接口补充。"""
     try:
         from app.models.database import get_db
         today = weather_data.get("days", [{}])[0] if weather_data.get("days") else {}
+
+        # 补充湿度：实时接口有 humidity，预报接口没有
+        humidity = weather_data.get("humidity") or today.get("humidity", "")
+        if not humidity:
+            try:
+                geocode = geocode_address(city, city=city)
+                city_code = geocode.get("adcode") if geocode else city
+                rt = _request_amap_weather("/weather/weatherInfo", {"city": city_code, "extensions": "base"})
+                live = rt.get("lives", [{}])[0] if rt.get("lives") else {}
+                humidity = live.get("humidity", "")
+            except Exception:
+                pass
+
         conn = get_db()
         conn.execute(
-            "INSERT INTO weather_records (city, weather, temperature, wind_direction, wind_power, forecast_json) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO weather_records (city, weather, temperature, humidity, wind_direction, wind_power, forecast_json) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
                 city,
                 today.get("day_weather", ""),
                 int(today.get("day_temp", 0) or 0),
+                str(humidity),
                 today.get("day_wind", ""),
                 today.get("night_wind", ""),
                 json.dumps(weather_data, ensure_ascii=False),
@@ -117,6 +131,20 @@ async def get_weather_with_fallback(city: str) -> dict[str, Any]:
     cached = get_cached_json(cache_key)
     if cached is not None:
         cached["_source"] = "cache"
+        # 缓存数据可能缺少 humidity（旧缓存），实时补充
+        if not cached.get("humidity"):
+            try:
+                geocode = geocode_address(city, city=city)
+                city_code = geocode.get("adcode") if geocode else city
+                rt = _request_amap_weather("/weather/weatherInfo", {"city": city_code, "extensions": "base"})
+                live = rt.get("lives", [{}])[0] if rt.get("lives") else {}
+                humidity = live.get("humidity", "")
+                if humidity:
+                    cached["humidity"] = humidity
+                    if cached.get("days"):
+                        cached["days"][0]["humidity"] = humidity
+            except Exception:
+                pass
         return cached
 
     # Level 2: SQLite 历史记录（仅当数据在 30 分钟内时使用）
@@ -216,6 +244,21 @@ def get_weather_forecast(city: str) -> dict[str, Any]:
         "report_time": first.get("reporttime"),
         "days": days,
     }
+
+    # 补充实时湿度（预报接口不含湿度，需调实时接口）
+    try:
+        realtime = _request_amap_weather(
+            "/weather/weatherInfo",
+            {"city": city_code or city, "extensions": "base"},
+        )
+        live = realtime.get("lives", [{}])[0] if realtime.get("lives") else {}
+        humidity = live.get("humidity", "")
+        if humidity and result.get("days"):
+            result["days"][0]["humidity"] = humidity
+            result["humidity"] = humidity
+    except Exception:
+        pass
+
     set_cached_json(cache_key, result, expire_seconds=REDIS_WEATHER_TTL_SECONDS)
 
     # 持久化到 SQLite

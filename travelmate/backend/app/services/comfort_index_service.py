@@ -37,7 +37,7 @@ class TCIResult:
 # ── 纯计算函数（无 LLM 依赖） ─────────────────────────────
 
 def _calc_weather_score(temp: int, weather_desc: str, wind: str) -> int:
-    """天气维度评分（0-100）。"""
+    """天气维度评分（0-100），含温度+天气状况+风力。"""
     # 温度舒适度（最优区间 18-26°C）
     if 18 <= temp <= 26:
         temp_score = 100
@@ -52,12 +52,22 @@ def _calc_weather_score(temp: int, weather_desc: str, wind: str) -> int:
 
     # 天气状况惩罚
     weather_penalty = 0
-    bad_weather = {"暴雨": 30, "大雨": 25, "中雨": 15, "小雨": 10, "雷": 25, "大风": 20, "台风": 40}
+    bad_weather = {"暴雨": 30, "大雨": 25, "中雨": 15, "小雨": 10, "雷": 25, "台风": 40}
     for keyword, penalty in bad_weather.items():
         if keyword in weather_desc:
             weather_penalty = max(weather_penalty, penalty)
 
-    return max(0, min(100, temp_score - weather_penalty))
+    # 风力惩罚
+    import re
+    wind_penalty = 0
+    for w_level in re.findall(r'(\d+)', wind):
+        level = int(w_level)
+        if level >= 8:
+            wind_penalty = 20
+        elif level >= 6:
+            wind_penalty = 10
+
+    return max(0, min(100, temp_score - weather_penalty - wind_penalty))
 
 
 def _calc_crowd_score(is_holiday: bool, hour: int) -> int:
@@ -131,13 +141,13 @@ def calculate_tci(ctx: ComfortContext) -> TCIResult:
 
     total = int(weather_s * 0.4 + crowd_s * 0.2 + trip_s * 0.2 + time_s * 0.2)
 
-    if total >= 85:
+    if total >= 80:
         level, emoji = "极佳", "🟢"
-    elif total >= 70:
+    elif total >= 60:
         level, emoji = "良好", "🔵"
-    elif total >= 55:
+    elif total >= 40:
         level, emoji = "一般", "🟡"
-    elif total >= 35:
+    elif total >= 20:
         level, emoji = "较差", "🟠"
     else:
         level, emoji = "不宜", "🔴"

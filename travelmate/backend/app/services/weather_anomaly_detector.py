@@ -12,8 +12,9 @@ logger = logging.getLogger(__name__)
 
 RAIN_KEYWORDS = {"雨", "雷", "阵雨", "暴雨", "小雨", "中雨", "大雨", "雷阵雨"}
 HIGH_TEMP_THRESHOLD = 35       # 高温阈值 °C
-TEMP_DROP_THRESHOLD = 10       # 骤降阈值 °C（对比前后两天白天温度）
+TEMP_DROP_THRESHOLD = 8        # 骤降阈值 °C（24小时内降幅）
 STRONG_WIND_KEYWORDS = {"大风", "强风", "风暴", "台风"}
+STRONG_WIND_LEVEL = 6          # ≥6级大风阈值
 
 
 @dataclass
@@ -54,18 +55,20 @@ def _check_rain_forecast(today: dict, tomorrow: dict | None) -> AnomalyResult | 
     return None
 
 
-def _check_extreme_heat(today: dict) -> AnomalyResult | None:
-    """规则2：高温预警。"""
+def _check_extreme_heat(today: dict, tomorrow: dict | None) -> AnomalyResult | None:
+    """规则2：明天高温预警（明天最高温≥35°C）。"""
+    target = tomorrow or today
     try:
-        temp = int(today.get("day_temp", 0) or 0)
+        temp = int(target.get("day_temp", 0) or 0)
     except (ValueError, TypeError):
         return None
     if temp >= HIGH_TEMP_THRESHOLD:
+        label = "明天" if tomorrow else "今天"
         return AnomalyResult(
             rule_name="extreme_heat",
             severity="warning",
-            title=f"🌡️ 高温预警：{temp}°C",
-            detail=f"今日最高气温{temp}°C，已超过{HIGH_TEMP_THRESHOLD}°C高温阈值。",
+            title=f"🌡️ {label}高温预警：{temp}°C",
+            detail=f"{label}最高气温{temp}°C，已超过{HIGH_TEMP_THRESHOLD}°C高温阈值。",
             suggestion="注意防暑降温，避免长时间户外活动，多补充水分。",
         )
     return None
@@ -93,15 +96,27 @@ def _check_temperature_drop(today: dict, tomorrow: dict | None) -> AnomalyResult
 
 
 def _check_strong_wind(today: dict) -> AnomalyResult | None:
-    """规则4：强风预警。"""
+    """规则4：强风预警（关键词匹配 或 风力数值≥6级）。"""
     day_wind = today.get("day_wind", "")
     night_wind = today.get("night_wind", "")
-    if any(k in day_wind or k in night_wind for k in STRONG_WIND_KEYWORDS):
+
+    # 关键词匹配
+    has_keyword = any(k in day_wind or k in night_wind for k in STRONG_WIND_KEYWORDS)
+
+    # 数值判断（提取风力级数）
+    import re
+    wind_level = 0
+    for w in (day_wind, night_wind):
+        m = re.search(r'(\d+)', w)
+        if m:
+            wind_level = max(wind_level, int(m.group(1)))
+
+    if has_keyword or wind_level >= STRONG_WIND_LEVEL:
         return AnomalyResult(
             rule_name="strong_wind",
             severity="warning",
             title="💨 强风预警",
-            detail=f"今日风力：白天{day_wind}，夜间{night_wind}。",
+            detail=f"今日风力：白天{day_wind}，夜间{night_wind}（{wind_level}级）。",
             suggestion="强风天气注意出行安全，避免高空活动和水上项目。",
         )
     return None
@@ -129,7 +144,7 @@ def detect_anomalies(weather_data: dict[str, Any], city: str = "") -> AnomalyRep
     report = AnomalyReport(city=city or weather_data.get("city", "未知"))
 
     for rule_fn in RULES:
-        result = rule_fn(today, tomorrow) if rule_fn in (_check_rain_forecast, _check_temperature_drop) else rule_fn(today)
+        result = rule_fn(today, tomorrow) if rule_fn in (_check_rain_forecast, _check_temperature_drop, _check_extreme_heat) else rule_fn(today)
         if result is not None:
             report.anomalies.append(result)
 
