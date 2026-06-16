@@ -45,6 +45,13 @@ app.add_middleware(
     expose_headers=["X-Device-ID"],
 )
 
+# O8: 静态文件服务（图片持久化）
+from fastapi.staticfiles import StaticFiles
+from pathlib import Path
+UPLOADS_DIR = Path(__file__).resolve().parent.parent / "data" / "uploads"
+UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
+
 app.include_router(chat_router)
 app.include_router(memory_router)
 app.include_router(sessions_router)

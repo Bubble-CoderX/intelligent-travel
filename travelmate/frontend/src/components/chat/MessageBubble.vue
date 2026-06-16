@@ -164,7 +164,12 @@ function formatTime(ts: number): string {
       </template>
 
       <!-- 正常用户消息 -->
-      <div v-else-if="isUser" class="whitespace-pre-wrap">{{ message.content }}</div>
+      <div v-else-if="isUser" class="whitespace-pre-wrap">
+        <div v-if="message.imageData" class="mb-2">
+          <img :src="message.imageData" class="max-w-[200px] max-h-[150px] rounded-lg object-cover" />
+        </div>
+        {{ message.content }}
+      </div>
 
       <!-- 正常 assistant 消息 -->
       <template v-else>

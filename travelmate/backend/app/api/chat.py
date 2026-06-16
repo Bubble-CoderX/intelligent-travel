@@ -219,7 +219,8 @@ async def chat_stream_endpoint(req: ChatRequest):
 
         # 构建对话历史
         chat_prompt = (
-            "你是「AI智游伴」，友好专业的旅行助手。简洁温暖，1-3句话。"
+            "你是「AI智游伴」，友好专业的旅行助手。回答要详细有料，3-5句话左右。"
+            "如果用户问景点，要包含历史背景、文化特色、游玩亮点和实用建议。"
             "前面的消息是你们的对话历史，你必须基于历史回答。"
         )
         history = await get_recent_history(req.device_id, session_id=session_id)
@@ -232,7 +233,7 @@ async def chat_stream_endpoint(req: ChatRequest):
                 messages=messages,
                 system_prompt=chat_prompt,
                 temperature=0.7,
-                max_tokens=300,
+                max_tokens=500,
             ):
                 full_reply += chunk
                 yield f"data: {json.dumps({'type': 'chunk', 'content': chunk}, ensure_ascii=False)}\n\n"
@@ -286,33 +287,56 @@ async def analyze_image(req: ImageAnalyzeRequest):
     """O8: 分析上传的图片（千问VL识别 + 自动调研知识库）。"""
     session_id = req.session_id or "default"
 
-    # 1. 用千问 VL 识别图片内容
+    # 1. 保存图片到磁盘
+    image_url = ""
+    try:
+        import uuid
+        from pathlib import Path
+        ext = req.filename.split(".")[-1] if "." in req.filename else "jpg"
+        img_name = f"{uuid.uuid4().hex[:12]}.{ext}"
+        img_path = Path(__file__).resolve().parent.parent.parent / "data" / "uploads" / img_name
+        img_data = base64.b64decode(req.image_base64)
+        img_path.write_bytes(img_data)
+        image_url = f"/uploads/{img_name}"
+    except Exception as exc:
+        logger.warning("图片保存失败: %s", exc)
+
+    # 2. 用千问 VL 识别图片内容
     try:
         from app.services.qwen_vl_client import analyze_image as qwen_analyze
         identification = await qwen_analyze(
             req.image_base64,
-            "请识别这张图片的内容。如果是景点，告诉我景点名称和所在城市。"
-            "如果是美食，告诉我菜品名称。如果是路牌，告诉我位置信息。"
-            "用中文简洁回答，第一行给出识别结果（如：景点：广州塔，城市：广州）。"
+            "请仔细观察这张图片，按以下步骤详细分析：\n"
+            "1. 描述你看到的主要建筑物/地标/场景的外观特征（形状、颜色、高度、文字、周围环境等）\n"
+            "2. 根据外观特征判断这是什么景点或场所\n"
+            "3. 给出景点名称和所在城市\n"
+            "4. 详细介绍这个景点（4-5句话）：包括历史背景、文化意义、建筑特色、游玩亮点、适合什么人群、最佳游览时间等\n\n"
+            "输出格式：\n"
+            "识别结果：[景点名称]，城市：[城市名]\n"
+            "特征描述：[你看到的外观特征]\n"
+            "详细介绍：[4-5句话的景点介绍]\n"
+            "推荐理由：[为什么值得去]"
         )
     except Exception as exc:
         logger.warning("千问VL识别失败: %s", exc)
-        identification = f"图片识别失败：{type(exc).__name__}"
+        identification = f"图片识别暂时不可用（{type(exc).__name__}）。请描述图片内容，我来帮你分析。"
 
     # 2. 解析识别结果，提取景点名和城市
     spot_name = ""
     city = ""
     for line in identification.split("\n"):
         line = line.strip()
-        if "景点" in line or "城市" in line:
-            # 尝试提取 "景点：XXX" 或 "城市：XXX"
-            import re
-            spot_match = re.search(r'景点[：:]\s*(.+?)[，,。\s]', line)
-            city_match = re.search(r'城市[：:]\s*(.+?)[，,。\s]', line)
-            if spot_match:
-                spot_name = spot_match.group(1).strip()
-            if city_match:
-                city = city_match.group(1).strip()
+        # 匹配 "识别结果：XXX" 或 "景点：XXX"
+        import re
+        result_match = re.search(r'识别结果[：:]\s*(.+?)[，,。\s]', line)
+        spot_match = re.search(r'景点[：:]\s*(.+?)[，,。\s]', line)
+        city_match = re.search(r'城市[：:]\s*(.+?)[，,。\s]', line)
+        if result_match:
+            spot_name = result_match.group(1).strip()
+        elif spot_match:
+            spot_name = spot_match.group(1).strip()
+        if city_match:
+            city = city_match.group(1).strip()
 
     # 3. 如果识别出景点，自动调研知识库
     knowledge_msg = ""
@@ -320,10 +344,14 @@ async def analyze_image(req: ImageAnalyzeRequest):
         try:
             from app.services.knowledge_expander import auto_expand, has_local_knowledge
             if not has_local_knowledge(spot_name):
-                category = "spots"
-                if city:
-                    # 如果是城市级的景点，保存到城市分类
+                # 判断分类：检查cities目录下是否已有同名文件
+                from pathlib import Path
+                cities_dir = Path(__file__).resolve().parent.parent.parent / "data" / "knowledge" / "cities"
+                safe_name = re.sub(r'[\\/:*?"<>|]', '_', spot_name)
+                if cities_dir.exists() and (cities_dir / f"{safe_name}.md").exists():
                     category = "cities"
+                else:
+                    category = "spots"
                 result = await auto_expand(spot_name, category=category)
                 if result.get("status") == "ok":
                     knowledge_msg = f"\n\n📚 已自动调研「{spot_name}」的知识信息并保存到知识库。"
@@ -332,8 +360,9 @@ async def analyze_image(req: ImageAnalyzeRequest):
 
     reply = identification + knowledge_msg
 
-    # 4. 保存消息
-    save_message(req.device_id, session_id, "user", f"[图片] {req.question or '分析图片'}", "IMAGE")
+    # 4. 保存消息（含 image_url）
+    metadata = {"image_url": image_url} if image_url else None
+    save_message(req.device_id, session_id, "user", "", "IMAGE", metadata=metadata)
     save_message(req.device_id, session_id, "assistant", reply, "IMAGE")
 
-    return {"reply": reply, "intent": "IMAGE"}
+    return {"reply": reply, "intent": "IMAGE", "image_url": image_url}

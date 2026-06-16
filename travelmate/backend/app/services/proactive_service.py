@@ -243,7 +243,7 @@ GREETING_PROMPTS: dict[str, str] = {
 - 最近行程：{recent_trips}
 
 ## 问候方向：天气 + 日常关怀
-- 自然地提及当前天气情况
+- **必须**在问候中提及当前天气情况（下面已提供具体天气数据）
 - 根据天气给出1条实用建议（穿衣/出行/带伞等）
 - 如果不忙可以聊聊旅行计划
 
@@ -348,10 +348,14 @@ async def generate_greeting(device_id: str, client_ip: str | None = None) -> dic
     city = resolve_location(device_id, client_ip)
     if city:
         try:
-            import asyncio
-            data = await asyncio.to_thread(get_weather_forecast, city)
+            from app.services.weather_service import get_weather_with_fallback
+            data = await get_weather_with_fallback(city)
             today = data.get("days", [{}])[0] if data.get("days") else {}
-            weather_text = f"{city} {today.get('day_weather', '')} {today.get('day_temp', '')}°C"
+            day_weather = today.get("day_weather", "")
+            day_temp = today.get("day_temp", "")
+            night_temp = today.get("night_temp", "")
+            day_wind = today.get("day_wind", "")
+            weather_text = f"{city}今天{day_weather}，{day_temp}°C/{night_temp}°C，{day_wind}风"
         except Exception:
             weather_text = city if city else "未知"
     else:

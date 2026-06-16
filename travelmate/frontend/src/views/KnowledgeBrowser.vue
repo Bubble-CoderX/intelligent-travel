@@ -128,7 +128,6 @@ onMounted(() => { fetchKnowledge(); fetchCategories() })
             <h3 class="font-semibold text-lg" :class="props.dark ? 'text-stone-200' : 'text-stone-800'">📍 {{ item.city }}</h3>
             <div class="flex items-center gap-2">
               <span v-if="item.category" class="rounded-full bg-stone-100 px-2 py-0.5 text-[10px] dark:bg-stone-700 dark:text-stone-400">{{ item.category }}</span>
-              <span class="text-xs" :class="props.dark ? 'text-stone-500' : 'text-stone-400'">{{ item.size_kb }} KB</span>
             </div>
           </div>
           <p class="text-xs mb-2 line-clamp-2" :class="props.dark ? 'text-stone-400' : 'text-stone-500'">{{ item.description }}</p>

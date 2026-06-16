@@ -122,6 +122,7 @@ export const useChatStore = defineStore('chat', () => {
         timestamp: new Date(m.created_at).getTime(),
         type: m.intent === 'TRIP_PLAN' ? 'card' : 'text',
         metadata: m.metadata ?? undefined,
+        imageData: m.metadata?.image_url ? `http://localhost:8000${m.metadata.image_url}` : undefined,
       }))
     } catch {
       messages.value = []
@@ -157,7 +158,7 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
-  async function sendMessage(content: string, appendUserMsg = true, existingUserMsgId?: string, tripStyle?: string) {
+  async function sendMessage(content: string, appendUserMsg = true, existingUserMsgId?: string, tripStyle?: string, imageData?: string) {
     const userMsgId = existingUserMsgId ?? crypto.randomUUID()
     if (appendUserMsg) {
       addMessage({
@@ -166,6 +167,7 @@ export const useChatStore = defineStore('chat', () => {
         content,
         timestamp: Date.now(),
         type: 'text',
+        imageData,
       })
     }
 

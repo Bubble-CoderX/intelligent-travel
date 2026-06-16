@@ -17,16 +17,18 @@ router = APIRouter(prefix="/knowledge", tags=["knowledge"])
 
 class AutoExpandRequest(BaseModel):
     spot_name: str = Field(..., description="景点名称，例如「平遥古城」")
+    category: str = Field(default="cities", description="分类：cities/spots/food/culture/folk/history/nature/ancient/museum")
 
 
 class BatchExpandRequest(BaseModel):
     spot_names: list[str] = Field(..., description="景点名称列表", min_length=1, max_length=20)
+    category: str = Field(default="cities", description="分类：cities/spots/food/culture/folk/history/nature/ancient/museum")
 
 
 @router.post("/auto-expand")
 async def api_auto_expand(req: AutoExpandRequest):
     """手动触发景点知识自动调研。"""
-    result = await auto_expand(req.spot_name)
+    result = await auto_expand(req.spot_name, category=req.category)
     if result.get("status") == "no_results":
         raise HTTPException(status_code=404, detail=result["message"])
     return result
@@ -59,7 +61,7 @@ async def api_auto_expand_batch(req: BatchExpandRequest):
                     success += 1
                     continue
 
-                result = await auto_expand(name)
+                result = await auto_expand(name, category=req.category)
 
                 if result.get("status") == "ok":
                     yield f"data: {json.dumps({'type': 'done', 'spot': name, 'index': i + 1, 'total': total, 'chunks': result.get('chunk_count', 0), 'cached': False}, ensure_ascii=False)}\n\n"

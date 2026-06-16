@@ -67,7 +67,7 @@ async function startBatchExpand() {
         'Content-Type': 'application/json',
         'X-Device-ID': getDeviceId(),
       },
-      body: JSON.stringify({ spot_names: spots }),
+      body: JSON.stringify({ spot_names: spots, category: selectedCategory.value }),
     })
 
     if (!res.ok) {

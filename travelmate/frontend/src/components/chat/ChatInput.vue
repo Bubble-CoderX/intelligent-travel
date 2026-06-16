@@ -3,7 +3,7 @@ import { ref, watch, computed, onMounted, onUnmounted } from 'vue'
 import { useSpeechRecognition } from '@/composables/useSpeechRecognition'
 import StyleSelector from './StyleSelector.vue'
 
-const emit = defineEmits<{ send: [content: string, tripStyle?: string] }>()
+const emit = defineEmits<{ send: [content: string, tripStyle?: string, imageData?: string] }>()
 defineProps<{ disabled?: boolean }>()
 
 const input = ref('')
@@ -93,30 +93,62 @@ async function handleFileUpload(e: any) {
     return
   }
 
-  // 读取图片为 Base64 并发送到后端分析
   const reader = new FileReader()
   reader.onload = async () => {
-    const base64 = (reader.result as string).split(',')[1]
+    const dataUrl = reader.result as string
+    const base64 = dataUrl.split(',')[1]
+
+    // 先显示用户消息（用 data URL 临时显示，等后端返回 server URL 后替换）
+    const { useChatStore } = await import('@/stores/chat')
+    const store = useChatStore()
+    const userMsgId = crypto.randomUUID()
+    store.addMessage({
+      id: userMsgId,
+      role: 'user',
+      content: '',
+      timestamp: Date.now(),
+      type: 'text',
+      imageData: dataUrl,
+    })
+
+    // 调用后端分析图片（同时保存到磁盘）
     try {
       const res = await fetch('http://localhost:8000/chat/image', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           device_id: localStorage.getItem('travelmate_device_id') || '',
-          session_id: '',
+          session_id: store.sessionId || '',
           image_base64: base64,
           filename: file.name,
           question: `请分析这张图片（${file.name}）`,
         }),
       })
       const data = await res.json()
-      if (data.reply) {
-        // 将识别结果作为用户消息和AI回复添加到聊天
-        emit('send', `[上传图片: ${file.name}]`)
+      // 用服务器 URL 替换用户消息中的图片（持久化）
+      if (data.image_url) {
+        const serverUrl = `http://localhost:8000${data.image_url}`
+        const userMsg = store.messages.find(m => m.id === userMsgId)
+        if (userMsg) userMsg.imageData = serverUrl
       }
+      // 添加 AI 回复
+      store.addMessage({
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: data.reply || '图片分析完成',
+        timestamp: Date.now(),
+        type: 'text',
+      })
+      store.loadSessions()
     } catch (err) {
       console.error('图片分析失败', err)
-      emit('send', `[上传图片: ${file.name}] 图片分析暂时不可用`)
+      store.addMessage({
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: '图片分析暂时不可用，请稍后再试',
+        timestamp: Date.now(),
+        type: 'text',
+      })
     }
   }
   reader.readAsDataURL(file)

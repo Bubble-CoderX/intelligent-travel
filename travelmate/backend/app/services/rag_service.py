@@ -48,6 +48,12 @@ def load_knowledge_base() -> int:
         logger.warning("知识库目录不存在：%s", KNOWLEDGE_DIR)
         return 0
 
+    # 如果 ChromaDB 已有数据，跳过加载（启动加速）
+    existing = _knowledge_collection.count()
+    if existing > 0:
+        logger.info("知识库已加载（%d 个段落），跳过重复加载", existing)
+        return existing
+
     total_chunks = 0
     # 扫描所有子目录中的 .md 文件
     for md_file in sorted(KNOWLEDGE_DIR.rglob("*.md")):

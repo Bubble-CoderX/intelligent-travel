@@ -86,8 +86,8 @@ watch(() => store.sessionId, (newId) => {
   switchedSessionId = newId
 })
 
-function handleSend(content: string, tripStyle?: string) {
-  store.sendMessage(content, true, undefined, tripStyle)
+function handleSend(content: string, tripStyle?: string, imageData?: string) {
+  store.sendMessage(content, true, undefined, tripStyle, imageData)
 }
 
 function handleSwitchStyle(msg: { id: string }) {
