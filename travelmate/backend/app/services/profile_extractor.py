@@ -268,17 +268,27 @@ def extract_travel_profile(device_id: str, user_message: str) -> list[str]:
     # 通用食物过敏：检测"X过敏"模式
     allergy_match = re.findall(r'([一-鿿]{1,6})过敏', msg)
     for item in allergy_match:
+        # 去掉人称代词前缀："我花粉过敏" → "花粉过敏"
+        item = re.sub(r'^[我你他她它]', '', item)
+        if not item or len(item) < 2:
+            continue
         if item in [kw for kws in _ALLERGY_KEYWORDS.values() for kw in kws]:
             continue  # 已在上面处理
-        if item in _ALLERGY_EXCLUDE or len(item) < 2:
-            continue  # 跳过疑问词和单字
+        if item in _ALLERGY_EXCLUDE:
+            continue  # 疑问词
         if any(food in item for food in _FOOD_WORDS):
             continue  # 食物过敏已在饮食忌口中处理
         new_allergies.append(f"{item}过敏")
     if new_allergies:
         existing = _get_profile_field(device_id, "allergies", [])
-        # 清理脏数据：疑问词匹配、单字等无效条目
-        existing = [e for e in existing if len(e) >= 3 and not any(q in e for q in _ALLERGY_EXCLUDE)]
+        # 清理脏数据：疑问词匹配、单字、人称代词前缀
+        cleaned = []
+        for e in existing:
+            e_clean = re.sub(r'^[我你他她它]', '', e)
+            if len(e_clean) < 2 or any(q in e_clean for q in _ALLERGY_EXCLUDE):
+                continue
+            cleaned.append(e_clean if e_clean != e else e)
+        existing = list(dict.fromkeys(cleaned))  # 去重
         merged = list(dict.fromkeys(existing + new_allergies))
         save_memory(device_id, "travel_profile", "allergies", json.dumps(merged, ensure_ascii=False))
         extracted.append("allergies")
