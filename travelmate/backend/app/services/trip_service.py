@@ -191,6 +191,16 @@ async def generate_trip_plan(
 
     health_text = "\n".join(health_parts) if health_parts else "无特殊健康或人群需求"
 
+    # ── O12: 天气联动餐饮推荐 ────────────────────────
+    dining_text = ""
+    try:
+        from app.services.weather_linkage_engine import get_dining_suggestion_by_weather, inject_dining_context
+        weather_data = await asyncio.to_thread(get_weather_forecast, destination)
+        dining_suggestion = get_dining_suggestion_by_weather(weather_data)
+        dining_text = inject_dining_context(dining_suggestion)
+    except Exception:
+        pass
+
     # ── O2: 交通推荐（出发地 → 目的地） ──────────────────
     # 优先级：用户消息传入 > profile存储 > IP定位
     if not departure:
@@ -232,6 +242,7 @@ async def generate_trip_plan(
         knowledge_text=knowledge_text,
         health_text=health_text,
         transport_text=transport_text,
+        dining_text=dining_text,
     )
 
     # 动态 token：天数越多需要越多 token 输出 JSON

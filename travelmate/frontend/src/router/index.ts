@@ -31,6 +31,11 @@ const routes = [
     name: 'chat-history',
     component: () => import('@/views/ChatHistory.vue'),
   },
+  {
+    path: '/weather-records',
+    name: 'weather-records',
+    component: () => import('@/views/WeatherRecord.vue'),
+  },
 ]
 
 const router = createRouter({

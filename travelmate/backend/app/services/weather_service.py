@@ -64,8 +64,30 @@ def _normalize_cache_text(value: str | None) -> str:
 
 # ── F1：天气数据持久化 ─────────────────────────────────────
 
+def _normalize_city_name(city: str) -> str:
+    """标准化城市名：去'市'、英文转中文、过滤无效词。"""
+    if not city:
+        return ""
+    city = city.strip()
+    # 英文转中文
+    from app.api.weather import _EN_TO_CN_CITY
+    city = _EN_TO_CN_CITY.get(city, city)
+    # 去掉末尾"市"（"广州市"→"广州"）
+    if city.endswith("市") and len(city) > 1:
+        city = city[:-1]
+    # 过滤明显不是城市的无效词
+    if len(city) < 2 or any(k in city for k in ["帮我", "规划", "预算", "玩", "去", "从"]):
+        return ""
+    return city
+
+
 def _persist_weather(city: str, weather_data: dict) -> None:
     """将天气快照写入 SQLite，humidity 从实时接口补充。"""
+    # 标准化城市名
+    city = _normalize_city_name(city)
+    if not city:
+        return  # 无效城市名，不保存
+
     try:
         from app.models.database import get_db
         today = weather_data.get("days", [{}])[0] if weather_data.get("days") else {}
