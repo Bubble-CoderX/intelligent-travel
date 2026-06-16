@@ -366,7 +366,12 @@ async def generate_greeting(device_id: str, client_ip: str | None = None) -> dic
         except Exception:
             weather_text = city if city else "未知"
     else:
-        weather_text = "（天气未知）"
+        # IP定位失败时，从已有departure_city兜底
+        from app.services.profile_extractor import _get_profile_field
+        existing_departure = _get_profile_field(device_id, "departure_city", "")
+        if existing_departure:
+            from app.services.memory_service import save_memory as _save_mem
+            _save_mem(device_id, "travel_profile", "current_city", existing_departure)
 
     # 格式化偏好和行程
     pref_text = "、".join(f"{p['key']}={p['value']}" for p in prefs[:5]) if prefs else "无"
