@@ -122,14 +122,16 @@ async def api_greet_session(req: GreetSessionRequest, request: Request = None):
 
     # ③ 保存到 conversations 表，标记 metadata 为主动服务
     meta_json = _json.dumps({"proactive_type": "greeting", "generated_by": "greet-session"}, ensure_ascii=False)
+    from datetime import datetime, timezone, timedelta
+    local_time = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M:%S")
     conn.execute(
-        "INSERT INTO conversations (device_id, session_id, role, content, metadata) VALUES (?, ?, 'assistant', ?, ?)",
-        (req.device_id, req.session_id, greeting, meta_json),
+        "INSERT INTO conversations (device_id, session_id, role, content, metadata, created_at) VALUES (?, ?, 'assistant', ?, ?, ?)",
+        (req.device_id, req.session_id, greeting, meta_json, local_time),
     )
     # 更新会话时间
     conn.execute(
-        "UPDATE sessions SET updated_at = CURRENT_TIMESTAMP WHERE session_id = ? AND device_id = ?",
-        (req.session_id, req.device_id),
+        "UPDATE sessions SET updated_at = ? WHERE session_id = ? AND device_id = ?",
+        (local_time, req.session_id, req.device_id),
     )
     conn.commit()
     conn.close()

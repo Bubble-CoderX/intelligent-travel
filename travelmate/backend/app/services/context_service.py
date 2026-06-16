@@ -17,12 +17,14 @@ _summary_cache: dict[str, tuple[int, str]] = {}
 
 
 def save_message(device_id: str, session_id: str, role: str, content: str, intent: str = "", metadata: dict | None = None) -> None:
-    """保存单条消息到对话历史。metadata 会被序列化为 JSON 存储。"""
+    """保存单条消息到对话历史。时间使用 UTC+8 本地时间。"""
+    from datetime import datetime, timezone, timedelta
     meta_json = _json.dumps(metadata, ensure_ascii=False) if metadata else None
+    local_time = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M:%S")
     conn = get_db()
     conn.execute(
-        "INSERT INTO conversations (device_id, session_id, role, content, intent, metadata) VALUES (?, ?, ?, ?, ?, ?)",
-        (device_id, session_id, role, content, intent, meta_json),
+        "INSERT INTO conversations (device_id, session_id, role, content, intent, metadata, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (device_id, session_id, role, content, intent, meta_json, local_time),
     )
     conn.commit()
     conn.close()

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 from io import BytesIO
 from urllib.request import Request, urlopen
 from xml.sax.saxutils import escape
 
 from app.models.schemas import Itinerary, TripDetailResponse
+
+logger = logging.getLogger(__name__)
 
 
 TECHNICAL_EXPORT_KEYWORDS = (
@@ -335,7 +338,8 @@ def itinerary_to_pdf_bytes(trip_detail: TripDetailResponse) -> bytes:
 
         for spot in day.spots:
             story.append(Paragraph(f"主要景点：{_safe_text(spot.name)}", body_style))
-            image_url = getattr(spot, "image_url", None)
+            # O32: 支持 photo_url（千问VL识别的照片）
+            image_url = getattr(spot, "photo_url", None) or getattr(spot, "image_url", None)
             spot_image = _load_pdf_image(image_url or "", max_width=72 * mm, max_height=42 * mm)
             if spot_image is not None:
                 story.extend([spot_image, Spacer(1, 4)])
@@ -419,6 +423,29 @@ def itinerary_to_pdf_bytes(trip_detail: TripDetailResponse) -> bytes:
         story.append(Paragraph("攻略参考", section_style))
         for note in public_notes:
             story.append(Paragraph(f"- {_safe_text(note)}", body_style))
+
+    # O32: 旅行清单融入 PDF
+    checklist_data = getattr(itinerary, "checklist", None)
+    logger.info("PDF清单检查: checklist=%s, type=%s", bool(checklist_data), type(checklist_data).__name__)
+    if checklist_data and isinstance(checklist_data, dict):
+        checklist_categories = checklist_data.get("categories", [])
+        if checklist_categories:
+            story.append(Spacer(1, 10))
+            story.append(Paragraph("旅行准备清单", section_style))
+            for cat in checklist_categories:
+                cat_name = cat.get("category", cat.get("name", ""))
+                cat_icon = cat.get("icon", "")
+                items = cat.get("items", [])
+                if cat_name and items:
+                    story.append(Paragraph(f"{cat_icon} {cat_name}", day_style))
+                    for item in items:
+                        if isinstance(item, dict):
+                            name = item.get("name", "")
+                            essential = " [必带]" if item.get("essential") else ""
+                            note = f"（{item.get('note', '')}）" if item.get("note") else ""
+                            story.append(Paragraph(f"  ☐ {name}{essential}{note}", body_style))
+                        else:
+                            story.append(Paragraph(f"  ☐ {item}", body_style))
 
     def draw_footer(canvas, document) -> None:
         _draw_pdf_footer(canvas, document, trip_detail, font_name)

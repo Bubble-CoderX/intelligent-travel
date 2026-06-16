@@ -37,12 +37,14 @@ def save_memory(
         ).fetchone()
 
         if existing:
+            from datetime import datetime, timezone, timedelta
+            local_time = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M:%S")
             conn.execute(
                 """UPDATE user_preferences
-                   SET value = ?, source = ?, updated_at = CURRENT_TIMESTAMP,
+                   SET value = ?, source = ?, updated_at = ?,
                        confidence = MIN(confidence + 0.1, 1.0)
                  WHERE device_id = ? AND category = ? AND key = ?""",
-                (value, source, device_id, category, key),
+                (value, source, local_time, device_id, category, key),
             )
         else:
             conn.execute(

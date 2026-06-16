@@ -131,9 +131,11 @@ async def update_trip_status(trip_id: int, status: str):
     if status not in ("planned", "in_progress", "completed"):
         raise HTTPException(status_code=400, detail="status 必须是 planned/in_progress/completed")
     db = get_db()
+    from datetime import datetime, timezone, timedelta
+    local_time = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M:%S")
     db.execute(
-        "UPDATE trip_history SET status=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
-        (status, trip_id),
+        "UPDATE trip_history SET status=?, updated_at=? WHERE id=?",
+        (status, local_time, trip_id),
     )
     db.commit()
     db.close()
@@ -156,9 +158,11 @@ async def delete_trip(trip_id: int):
 async def mark_trip_complete(trip_id: int):
     """标记行程为已完成。"""
     db = get_db()
+    from datetime import datetime, timezone, timedelta
+    local_time = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M:%S")
     db.execute(
-        "UPDATE trip_history SET status='completed', updated_at=CURRENT_TIMESTAMP WHERE id=?",
-        (trip_id,),
+        "UPDATE trip_history SET status='completed', updated_at=? WHERE id=?",
+        (local_time, trip_id),
     )
     db.commit()
     db.close()

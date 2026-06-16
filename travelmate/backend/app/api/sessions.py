@@ -37,11 +37,12 @@ def _generate_title(device_id: str, session_id: str) -> str:
 
 def update_session_title(device_id: str, session_id: str, title: str) -> None:
     """更新会话标题（供 chat 端点调用）。"""
+    from datetime import datetime, timezone, timedelta
+    local_time = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M:%S")
     conn = get_db()
     conn.execute(
-        "UPDATE sessions SET title = ?, updated_at = CURRENT_TIMESTAMP "
-        "WHERE session_id = ? AND device_id = ?",
-        (title, session_id, device_id),
+        "UPDATE sessions SET title = ?, updated_at = ? WHERE session_id = ? AND device_id = ?",
+        (title, local_time, session_id, device_id),
     )
     conn.commit()
     conn.close()
@@ -84,13 +85,18 @@ async def list_sessions(device_id: str):
 @router.post("")
 async def create_session(req: CreateSessionRequest):
     """创建新会话。"""
+    import uuid
+    from datetime import datetime, timezone, timedelta
+
     session_id = uuid.uuid4().hex[:12]
     title = req.title or "新会话"
+    # 使用 UTC+8 本地时间（中国标准时间）
+    local_time = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M:%S")
 
     conn = get_db()
     conn.execute(
-        "INSERT INTO sessions (session_id, device_id, title) VALUES (?, ?, ?)",
-        (session_id, req.device_id, title),
+        "INSERT INTO sessions (session_id, device_id, title, created_at) VALUES (?, ?, ?, ?)",
+        (session_id, req.device_id, title, local_time),
     )
     conn.commit()
     conn.close()
@@ -138,10 +144,11 @@ async def rename_session(session_id: str, device_id: str, req: RenameSessionRequ
         conn.close()
         raise HTTPException(status_code=404, detail="会话不存在")
 
+    from datetime import datetime, timezone, timedelta
+    local_time = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M:%S")
     conn.execute(
-        "UPDATE sessions SET title = ?, updated_at = CURRENT_TIMESTAMP "
-        "WHERE session_id = ? AND device_id = ?",
-        (req.title, session_id, device_id),
+        "UPDATE sessions SET title = ?, updated_at = ? WHERE session_id = ? AND device_id = ?",
+        (req.title, local_time, session_id, device_id),
     )
     conn.commit()
     conn.close()

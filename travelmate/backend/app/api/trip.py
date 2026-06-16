@@ -82,8 +82,58 @@ async def get_trip(trip_id: str):
 
 @router.get("/{trip_id}/export")
 async def export_trip(trip_id: str, format: str = "json"):
-    """导出行程为 PDF 或 JSON。"""
+    """导出行程为 PDF 或 JSON。优先从 trip_history 读取（含清单+照片）。"""
     conn = get_db()
+
+    # 优先从 trip_history 读取（数据更完整，含清单+照片）
+    # 尝试数字 ID
+    real_id = 0
+    try:
+        real_id = int(trip_id.replace("trip_", ""))
+    except (ValueError, TypeError):
+        pass
+
+    history_row = None
+    if real_id > 0:
+        history_row = conn.execute(
+            "SELECT itinerary_json, created_at FROM trip_history WHERE id=?", (real_id,)
+        ).fetchone()
+
+    # UUID 格式：在 trip_plans 的 plan_json 中搜索
+    if not history_row:
+        row = conn.execute(
+            "SELECT plan_json, created_at FROM trip_plans WHERE plan_json LIKE ?",
+            (f'%{trip_id}%',),
+        ).fetchone()
+        if row and row["plan_json"]:
+            try:
+                plan = json.loads(row["plan_json"])
+                plan_id = plan.get("trip_id", "")
+                if plan_id == trip_id:
+                    history_row = {"itinerary_json": row["plan_json"], "created_at": row["created_at"]}
+            except Exception:
+                pass
+
+    if history_row and history_row["itinerary_json"]:
+        try:
+            itinerary = Itinerary(**json.loads(history_row["itinerary_json"]))
+            logger.info("PDF导出: checklist=%s, categories=%d",
+                        'YES' if itinerary.checklist else 'NO',
+                        len(itinerary.checklist.get("categories", [])) if itinerary.checklist else 0)
+            detail = TripDetailResponse(trip_id=trip_id, itinerary=itinerary, created_at=history_row["created_at"])
+            # PDF 文件名用行程标题（URL编码避免中文乱码）
+            title = itinerary.summary or f"{itinerary.destination}{len(itinerary.days)}日游"
+            from urllib.parse import quote
+            safe_title = quote(title[:30])
+            if format == "pdf":
+                pdf_bytes = itinerary_to_pdf_bytes(detail)
+                return StreamingResponse(iter([pdf_bytes]), media_type="application/pdf",
+                    headers={"Content-Disposition": f"attachment; filename*=UTF-8''{safe_title}.pdf"})
+            return {"trip_id": trip_id, "itinerary": itinerary.model_dump(), "created_at": history_row["created_at"]}
+        except Exception:
+            pass
+
+    # 回退到 trip_plans
     row = _find_trip_row(conn, trip_id)
     conn.close()
 
@@ -102,11 +152,14 @@ async def export_trip(trip_id: str, format: str = "json"):
     )
 
     if format == "pdf":
+        title = itinerary.summary or f"{itinerary.destination}{len(itinerary.days)}日游"
+        from urllib.parse import quote
+        safe_title = quote(title[:30])
         pdf_bytes = itinerary_to_pdf_bytes(detail)
         return StreamingResponse(
             iter([pdf_bytes]),
             media_type="application/pdf",
-            headers={"Content-Disposition": f'attachment; filename="{trip_id}.pdf"'},
+            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{safe_title}.pdf"},
         )
 
     # 默认返回 JSON
