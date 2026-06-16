@@ -94,6 +94,13 @@ function displayValue(item: PrefItem): string {
   if (item.key === 'travel_style') return STYLE_MAP[val] || val
   if (item.key === 'budget_tier') return BUDGET_TIER_MAP[val] || val
   if (item.key === 'budget_daily') return `${val} 元/人/天`
+  // 住宿偏好可能是单值或JSON列表
+  if (item.key === 'accommodation' && val.startsWith('[')) {
+    try {
+      const arr = JSON.parse(val)
+      if (Array.isArray(arr)) return arr.join('、')
+    } catch { /* ignore */ }
+  }
   // 列表型
   if (val.startsWith('[')) {
     try {

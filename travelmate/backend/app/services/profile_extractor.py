@@ -195,7 +195,8 @@ def extract_travel_profile(device_id: str, user_message: str) -> list[str]:
                 save_memory(device_id, "travel_profile", "accommodation", "青旅")
                 extracted.append("accommodation")
             elif budget_tier in ("economic", "comfortable"):
-                save_memory(device_id, "travel_profile", "accommodation", "酒店")
+                # 经济/舒适档：同时推荐酒店和民宿，由LLM根据知识库灵活选择
+                save_memory(device_id, "travel_profile", "accommodation", json.dumps(["酒店", "民宿"], ensure_ascii=False))
                 extracted.append("accommodation")
             elif budget_tier == "luxury":
                 save_memory(device_id, "travel_profile", "accommodation", "高档酒店")

@@ -155,8 +155,15 @@ function displayValue(item: PrefItem): string {
   if (item.key === 'travel_style') return styleMap[item.value] ?? item.value
   if (item.key === 'transport_preference') return transportMap[item.value] ?? item.value
   if (item.key === 'budget_tier') return budgetTierMap[item.value] ?? item.value
-  if (item.key === 'accommodation') return item.value  // 直接显示中文值
   if (item.key === 'budget_daily') return `${item.value} 元/人/天`
+  // 住宿偏好可能是单值或JSON列表
+  if (item.key === 'accommodation' && item.value.startsWith('[')) {
+    try {
+      const arr = JSON.parse(item.value)
+      if (Array.isArray(arr)) return arr.join('、')
+    } catch { /* ignore */ }
+  }
+  return item.value
   return item.value
 }
 
