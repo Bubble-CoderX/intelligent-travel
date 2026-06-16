@@ -176,6 +176,7 @@ def extract_travel_profile(device_id: str, user_message: str) -> list[str]:
         extracted.append("taste_preference")
 
     # ── 住宿偏好 ────────────────────────────────────────
+    # 显式表达：住民宿/想住酒店/预订青旅 等
     if "民宿" in msg:
         save_memory(device_id, "travel_profile", "accommodation", "民宿")
         extracted.append("accommodation")
@@ -185,6 +186,20 @@ def extract_travel_profile(device_id: str, user_message: str) -> list[str]:
     elif "青旅" in msg or "背包" in msg:
         save_memory(device_id, "travel_profile", "accommodation", "青旅")
         extracted.append("accommodation")
+    else:
+        # 根据预算等级自动推断住宿偏好（仅在未设置时）
+        existing_acc = _get_profile_field(device_id, "accommodation", "")
+        if not existing_acc:
+            budget_tier = _get_profile_field(device_id, "budget_tier", "")
+            if budget_tier == "poor":
+                save_memory(device_id, "travel_profile", "accommodation", "青旅")
+                extracted.append("accommodation")
+            elif budget_tier in ("economic", "comfortable"):
+                save_memory(device_id, "travel_profile", "accommodation", "酒店")
+                extracted.append("accommodation")
+            elif budget_tier == "luxury":
+                save_memory(device_id, "travel_profile", "accommodation", "高档酒店")
+                extracted.append("accommodation")
 
     # ── 过敏史 ──────────────────────────────────────────
     new_allergies: list[str] = []

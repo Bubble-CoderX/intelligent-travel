@@ -71,6 +71,7 @@ const PROFILE_FIELDS: ProfileFieldDef[] = [
   { key: 'interests', label: '兴趣标签', type: 'list', alwaysShow: true },
   { key: 'taste_preference', label: '口味偏好', type: 'list', alwaysShow: true },
   { key: 'accommodation', label: '住宿偏好', type: 'text', alwaysShow: true },
+  { key: 'budget_tier', label: '预算等级', type: 'map', map: BUDGET_TIER_MAP, alwaysShow: true },
 ]
 
 function getProfileItem(key: string): PrefItem | undefined {

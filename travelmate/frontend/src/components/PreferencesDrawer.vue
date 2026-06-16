@@ -62,6 +62,7 @@ const PROFILE_FIELDS: ProfileFieldDef[] = [
   { key: 'interests', label: '兴趣标签', type: 'list', alwaysShow: true },
   { key: 'taste_preference', label: '口味偏好', type: 'list', alwaysShow: true },
   { key: 'accommodation', label: '住宿偏好', type: 'text', alwaysShow: true },
+  { key: 'budget_tier', label: '预算等级', type: 'map', map: {} as Record<string, string>, alwaysShow: true },
 ]
 
 const compositionMap: Record<string, string> = {
@@ -154,6 +155,7 @@ function displayValue(item: PrefItem): string {
   if (item.key === 'travel_style') return styleMap[item.value] ?? item.value
   if (item.key === 'transport_preference') return transportMap[item.value] ?? item.value
   if (item.key === 'budget_tier') return budgetTierMap[item.value] ?? item.value
+  if (item.key === 'accommodation') return item.value  // 直接显示中文值
   if (item.key === 'budget_daily') return `${item.value} 元/人/天`
   return item.value
 }
