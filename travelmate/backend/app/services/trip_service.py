@@ -152,6 +152,20 @@ async def generate_trip_plan(
     group_size = int(_get_profile_field(device_id, "group_size", "2") or "2")
     budget_tier = _get_profile_field(device_id, "budget_tier", "economic") or "economic"
 
+    # 住宿偏好推断：如果用户未设置，根据预算等级自动推断
+    accommodation = _get_profile_field(device_id, "accommodation", "")
+    if not accommodation:
+        from app.services.memory_service import save_memory as _save_mem
+        if budget_tier == "poor":
+            _save_mem(device_id, "travel_profile", "accommodation", "青旅")
+            accommodation = "青旅"
+        elif budget_tier in ("economic", "comfortable"):
+            _save_mem(device_id, "travel_profile", "accommodation", json.dumps(["酒店", "民宿"], ensure_ascii=False))
+            accommodation = "酒店、民宿"
+        elif budget_tier == "luxury":
+            _save_mem(device_id, "travel_profile", "accommodation", "高档酒店")
+            accommodation = "高档酒店"
+
     # 补充：日均预算 = 人均日均，总预算 = 人均日均 × 人数 × 天数
     daily_budget = int(_get_profile_field(device_id, "budget_daily", "0") or "0")
     if daily_budget > 0:
