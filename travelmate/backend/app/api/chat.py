@@ -165,8 +165,8 @@ async def chat_stream_endpoint(req: ChatRequest):
     intent = result.get("intent", "CHAT")
     reply = result.get("reply", "")
 
-    # TRIP_PLAN 等结构化意图：整体返回（不适合流式）
-    if intent in ("TRIP_PLAN", "blocked"):
+    # TRIP_PLAN / WEATHER / KNOWLEDGE 等结构化意图：整体返回（不适合流式）
+    if intent in ("TRIP_PLAN", "WEATHER", "KNOWLEDGE", "blocked"):
         # 构建 metadata
         metadata = {}
         if intent == "TRIP_PLAN":
