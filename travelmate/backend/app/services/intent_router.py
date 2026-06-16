@@ -300,6 +300,14 @@ async def route_intent(user_message: str, device_id: str, session_id: str | None
                     dep_match = re.search(r'从([一-龥]{2,6})(?:出发|去|到|飞|坐|自驾)', user_message)
                     if dep_match:
                         departure = dep_match.group(1)
+                    else:
+                        # 兜底：尝试从AI提取的destination中解析（如"从武汉去上海"）
+                        full_dest = extracted.get("destination", "")
+                        dep_match2 = re.search(r'从([一-龥]{2,6})(?:出发|去|到|飞|坐|自驾)', full_dest)
+                        if dep_match2:
+                            departure = dep_match2.group(1)
+                            # 清理destination中的出发地部分
+                            destination = re.sub(r'从[一-龥]{2,6}(?:出发|去|到|飞|坐|自驾)', '', full_dest).strip()
 
                     try:
                         result = await generate_trip_plan(

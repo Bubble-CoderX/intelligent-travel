@@ -231,7 +231,13 @@ async def generate_trip_plan(
         pass
 
     # ── O2: 交通推荐（出发地 → 目的地） ──────────────────
-    # 优先级：用户消息传入 > IP定位（每次重新获取）> profile兜底
+    # 优先级：intent_router提取 > IP定位 > profile兜底
+    if not departure:
+        # 兜底：尝试从destination参数中提取出发地（如"从武汉去上海"）
+        dep_match = re.search(r'从([一-龥]{2,6})(?:出发|去|到|飞|坐|自驾)', destination)
+        if dep_match:
+            departure = dep_match.group(1)
+
     if not departure:
         # 每次都重新获取当前位置，不依赖 profile 中的旧数据
         try:
