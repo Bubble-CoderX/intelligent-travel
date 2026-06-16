@@ -24,25 +24,67 @@ const stats = ref({ total: 0, conversation_based: 0, manual_based: 0, last_updat
 const LABEL_MAP: Record<string, string> = {
   group_size: '出行人数', composition: '人员构成', child_age: '儿童年龄',
   elder_count: '老人数量', travel_style: '旅行风格', interests: '兴趣标签',
-  fitness_level: '体力水平', photo_need: '拍照需求', dietary: '饮食忌口',
-  accommodation: '住宿偏好', atmosphere: '氛围偏好', budget_daily: '日均预算',
-  budget_tier: '预算等级', allergies: '过敏史', special_needs: '特殊需求',
-  transport_preference: '出行方式', departure_city: '出发地', current_city: '当前城市',
+  taste_preference: '口味偏好', fitness_level: '体力水平', photo_need: '拍照需求',
+  dietary: '饮食忌口', accommodation: '住宿偏好', atmosphere: '氛围偏好',
+  budget_daily: '日均预算', budget_tier: '预算等级', allergies: '过敏史',
+  special_needs: '特殊需求', transport_preference: '出行方式',
+  departure_city: '出发地', current_city: '当前城市',
 }
 
 const COMPOSITION_MAP: Record<string, string> = {
-  solo: '独自出行', couple: '情侣出行', family_child: '家庭（带娃）',
-  family_elder: '家庭（带老人）', group: '多人结伴',
+  solo: '独自出行', couple: '情侣出行',
+  family_baby: '家庭（带婴儿）', family_child: '家庭（带小孩）',
+  family_elder: '家庭（带老人）', family_child_elder: '家庭（带小孩+老人）',
+  group: '多人结伴',
 }
 const STYLE_MAP: Record<string, string> = {
   deep: '深度游', checkin: '打卡游', leisure: '休闲游', adventure: '探险游',
 }
 const INTEREST_MAP: Record<string, string> = {
   history: '历史', food: '美食', shopping: '购物', nature: '自然',
-  photography: '拍照', kid_friendly: '亲子',
+  art: '艺术', photography: '拍照', kid_friendly: '亲子',
+}
+const TASTE_MAP: Record<string, string> = {
+  '不吃辣': '不吃辣', '不吃酸': '不吃酸', '不吃甜': '不吃甜',
+  '不吃咸': '不吃咸', '不吃油腻': '不吃油腻',
+  '清淡': '清淡', '重口味': '重口味',
 }
 const BUDGET_TIER_MAP: Record<string, string> = {
   poor: '穷游', economic: '经济', comfortable: '舒适', luxury: '奢华',
+}
+
+// 出行档案固定字段定义
+interface ProfileFieldDef {
+  key: string
+  label: string
+  type: 'text' | 'list' | 'map'
+  map?: Record<string, string>
+  alwaysShow: boolean
+  dependsOn?: string
+}
+const PROFILE_FIELDS: ProfileFieldDef[] = [
+  { key: 'group_size', label: '出行人数', type: 'text', alwaysShow: true },
+  { key: 'composition', label: '人员构成', type: 'map', map: COMPOSITION_MAP, alwaysShow: true },
+  { key: 'child_age', label: '儿童年龄', type: 'text', alwaysShow: false, dependsOn: 'composition' },
+  { key: 'elder_count', label: '老人数量', type: 'text', alwaysShow: false, dependsOn: 'composition' },
+  { key: 'travel_style', label: '旅行风格', type: 'map', map: STYLE_MAP, alwaysShow: true },
+  { key: 'interests', label: '兴趣标签', type: 'list', alwaysShow: true },
+  { key: 'taste_preference', label: '口味偏好', type: 'list', alwaysShow: true },
+  { key: 'accommodation', label: '住宿偏好', type: 'text', alwaysShow: true },
+]
+
+function getProfileItem(key: string): PrefItem | undefined {
+  return prefs.value.find(p => p.category === 'travel_profile' && p.key === key)
+}
+function shouldShowField(field: ProfileFieldDef): boolean {
+  if (field.alwaysShow) return true
+  if (field.dependsOn) {
+    const dep = getProfileItem(field.dependsOn)
+    if (!dep) return false
+    if (field.key === 'child_age') return dep.value.includes('child') || dep.value.includes('baby')
+    if (field.key === 'elder_count') return dep.value.includes('elder')
+  }
+  return !!getProfileItem(field.key)
 }
 
 function displayValue(item: PrefItem): string {
@@ -50,12 +92,15 @@ function displayValue(item: PrefItem): string {
   if (item.key === 'composition') return COMPOSITION_MAP[val] || val
   if (item.key === 'travel_style') return STYLE_MAP[val] || val
   if (item.key === 'budget_tier') return BUDGET_TIER_MAP[val] || val
-  if (item.key === 'budget_daily') return `${val} 元/天`
+  if (item.key === 'budget_daily') return `${val} 元/人/天`
   // 列表型
   if (val.startsWith('[')) {
     try {
       const arr = JSON.parse(val)
-      if (Array.isArray(arr)) return arr.map(v => INTEREST_MAP[v] ?? v).join('、')
+      if (Array.isArray(arr)) {
+        const map = item.key === 'taste_preference' ? TASTE_MAP : INTEREST_MAP
+        return arr.map(v => map[v] ?? v).join('、')
+      }
     } catch { /* ignore */ }
   }
   return val
@@ -99,17 +144,22 @@ onMounted(fetchPrefs)
       </div>
 
       <div v-else class="space-y-6">
-        <!-- 出行档案 -->
+        <!-- 出行档案（固定字段，始终显示） -->
         <div>
           <h3 class="mb-3 text-sm font-semibold" :class="props.dark ? 'text-stone-300' : 'text-stone-600'">👤 出行档案 <span class="font-normal text-stone-400">（对话自动提取）</span></h3>
           <div class="space-y-1.5">
-            <div v-for="p in prefs.filter(x => x.category === 'travel_profile')" :key="p.id"
+            <div v-for="field in PROFILE_FIELDS" :key="field.key"
+              v-show="shouldShowField(field)"
               class="flex items-center justify-between rounded-lg border px-3 py-2.5"
               :class="props.dark ? 'border-stone-700 bg-[#2a2a2a]' : 'border-stone-100 bg-white'"
             >
               <div>
-                <div class="text-xs" :class="props.dark ? 'text-stone-500' : 'text-stone-400'">{{ LABEL_MAP[p.key] ?? p.key }}</div>
-                <div class="mt-0.5 text-sm font-medium" :class="props.dark ? 'text-stone-200' : 'text-stone-700'">{{ displayValue(p) }}</div>
+                <div class="text-xs" :class="props.dark ? 'text-stone-500' : 'text-stone-400'">{{ field.label }}</div>
+                <div class="mt-0.5 text-sm font-medium"
+                  :class="getProfileItem(field.key) ? (props.dark ? 'text-stone-200' : 'text-stone-700') : (props.dark ? 'text-stone-600' : 'text-stone-300')"
+                >
+                  {{ getProfileItem(field.key) ? displayValue(getProfileItem(field.key)!) : '未设置' }}
+                </div>
               </div>
             </div>
           </div>

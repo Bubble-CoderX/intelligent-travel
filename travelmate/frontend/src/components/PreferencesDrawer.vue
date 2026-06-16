@@ -26,6 +26,7 @@ const profileLabels: Record<string, { label: string; type: string }> = {
   elder_count:       { label: '老人数量', type: 'text' },
   travel_style:      { label: '旅行风格', type: 'text' },
   interests:         { label: '兴趣标签', type: 'list' },
+  taste_preference:  { label: '口味偏好', type: 'list' },
   dietary:           { label: '饮食忌口', type: 'list' },
   accommodation:     { label: '住宿偏好', type: 'text' },
   fitness_level:     { label: '体力水平', type: 'text' },
@@ -38,9 +39,36 @@ const profileLabels: Record<string, { label: string; type: string }> = {
   transport_preference: { label: '出行方式', type: 'text' },
 }
 
+// 出行档案固定字段定义（始终显示，无值时显示"未设置"）
+interface ProfileFieldDef {
+  key: string
+  label: string
+  type: 'text' | 'list' | 'map' | 'budget'
+  map?: Record<string, string>
+  /** 是否始终显示（false = 仅在有值时显示） */
+  alwaysShow: boolean
+  /** 依赖字段：仅当依赖字段有值时才显示 */
+  dependsOn?: string
+}
+
+const PROFILE_FIELDS: ProfileFieldDef[] = [
+  // 区域一：基本信息
+  { key: 'group_size', label: '出行人数', type: 'text', alwaysShow: true },
+  { key: 'composition', label: '人员构成', type: 'map', map: {} as Record<string, string>, alwaysShow: true },
+  { key: 'child_age', label: '儿童年龄', type: 'text', alwaysShow: false, dependsOn: 'composition' },
+  { key: 'elder_count', label: '老人数量', type: 'text', alwaysShow: false, dependsOn: 'composition' },
+  // 区域二：偏好信息
+  { key: 'travel_style', label: '旅行风格', type: 'map', map: {} as Record<string, string>, alwaysShow: true },
+  { key: 'interests', label: '兴趣标签', type: 'list', alwaysShow: true },
+  { key: 'taste_preference', label: '口味偏好', type: 'list', alwaysShow: true },
+  { key: 'accommodation', label: '住宿偏好', type: 'text', alwaysShow: true },
+]
+
 const compositionMap: Record<string, string> = {
-  solo: '独自出行', couple: '情侣出行', family_child: '家庭（带娃）',
-  family_elder: '家庭（带老人）', group: '多人结伴',
+  solo: '独自出行', couple: '情侣出行',
+  family_baby: '家庭（带婴儿）', family_child: '家庭（带小孩）',
+  family_elder: '家庭（带老人）', family_child_elder: '家庭（带小孩+老人）',
+  group: '多人结伴',
 }
 const styleMap: Record<string, string> = {
   deep: '深度游', checkin: '打卡游', leisure: '休闲游', adventure: '探险游',
@@ -51,6 +79,11 @@ const transportMap: Record<string, string> = {
 const interestMap: Record<string, string> = {
   history: '历史', food: '美食', shopping: '购物', nature: '自然',
   art: '艺术', photography: '拍照', kid_friendly: '亲子',
+}
+const tasteMap: Record<string, string> = {
+  '不吃辣': '不吃辣', '不吃酸': '不吃酸', '不吃甜': '不吃甜',
+  '不吃咸': '不吃咸', '不吃油腻': '不吃油腻',
+  '清淡': '清淡', '重口味': '重口味',
 }
 const budgetTierMap: Record<string, string> = {
   poor: '穷游', economic: '经济', comfortable: '舒适', luxury: '奢华',
@@ -68,10 +101,32 @@ const systemPrefs = computed(() =>
   allPrefs.value.filter(p => p.key === 'departure_city' || p.key === 'current_city')
 )
 
-// 出行档案
+// 出行档案 — 基于固定字段定义，始终显示关键字段
 const profilePrefs = computed(() =>
   allPrefs.value.filter(p => p.category === 'travel_profile' && !['departure_city', 'current_city'].includes(p.key))
 )
+
+// 获取某个 profile 字段的 PrefItem（可能不存在）
+function getProfileItem(key: string): PrefItem | undefined {
+  return allPrefs.value.find(p => p.category === 'travel_profile' && p.key === key)
+}
+
+// 判断固定字段是否应该显示
+function shouldShowField(field: ProfileFieldDef): boolean {
+  if (field.alwaysShow) return true
+  // dependsOn：仅当依赖字段有值时显示
+  if (field.dependsOn) {
+    const dep = getProfileItem(field.dependsOn)
+    if (!dep) return false
+    // composition 有值且包含 child/elder/baby 关键字时才显示子字段
+    if (field.key === 'child_age' || field.key === 'elder_count') {
+      const comp = dep.value
+      if (field.key === 'child_age') return comp.includes('child') || comp.includes('baby')
+      if (field.key === 'elder_count') return comp.includes('elder')
+    }
+  }
+  return !!getProfileItem(field.key)
+}
 
 // 已设置的精确设置
 function getProfileVal(key: string): string {
@@ -87,7 +142,10 @@ function displayValue(item: PrefItem): string {
   if (info.type === 'list') {
     try {
       const arr = JSON.parse(item.value)
-      if (Array.isArray(arr)) return arr.map(v => interestMap[v] ?? v).join('、')
+      if (Array.isArray(arr)) {
+        const map = item.key === 'taste_preference' ? tasteMap : interestMap
+        return arr.map(v => map[v] ?? v).join('、')
+      }
     } catch { /* ignore */ }
     return item.value
   }
@@ -218,23 +276,29 @@ onMounted(fetchPrefs)
         </div>
 
         <div v-else class="space-y-6">
-          <!-- ═══ 区域一：出行档案 ═══ -->
-          <div v-if="profilePrefs.length > 0">
+          <!-- ═══ 区域一：出行档案（固定字段，始终显示）═══ -->
+          <div>
             <h4 class="mb-3 text-xs font-semibold uppercase text-stone-400 dark:text-stone-500">👤 出行档案</h4>
             <p class="mb-2 text-[11px] text-stone-300 dark:text-stone-600">在对话中自然表达即可自动提取</p>
             <div class="space-y-1.5">
               <div
-                v-for="p in profilePrefs"
-                :key="p.id"
+                v-for="field in PROFILE_FIELDS"
+                :key="field.key"
+                v-show="shouldShowField(field)"
                 class="flex items-center justify-between rounded-lg border border-stone-100 bg-stone-50 px-3 py-2 dark:border-stone-700 dark:bg-[#1a1a1a]"
               >
                 <div class="min-w-0 flex-1">
-                  <div class="text-xs text-stone-400 dark:text-stone-500">{{ profileLabels[p.key]?.label ?? p.key }}</div>
-                  <div class="mt-0.5 text-sm font-medium text-stone-700 dark:text-stone-200">{{ displayValue(p) }}</div>
+                  <div class="text-xs text-stone-400 dark:text-stone-500">{{ field.label }}</div>
+                  <div class="mt-0.5 text-sm font-medium"
+                    :class="getProfileItem(field.key) ? 'text-stone-700 dark:text-stone-200' : 'text-stone-300 dark:text-stone-600'"
+                  >
+                    {{ getProfileItem(field.key) ? displayValue(getProfileItem(field.key)!) : '未设置' }}
+                  </div>
                 </div>
                 <button
+                  v-if="getProfileItem(field.key)"
                   class="ml-2 shrink-0 rounded p-1 text-stone-300 hover:bg-red-50 hover:text-red-400 dark:text-stone-600 dark:hover:bg-red-950 dark:hover:text-red-300"
-                  @click="delPref(p.category, p.key)"
+                  @click="delPref('travel_profile', field.key)"
                   title="删除"
                 >
                   <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

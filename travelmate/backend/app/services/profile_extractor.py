@@ -28,6 +28,21 @@ _ALLERGY_KEYWORDS = {
     "宠物毛发过敏": ["宠物毛发过敏", "宠物过敏"],
 }
 
+# ── 口味偏好映射 ─────────────────────────────────────────
+# taste_preference = 不喜欢/喜欢什么口味（口味偏好）
+# dietary = 不能吃什么（过敏/医嘱忌口）
+_TASTE_NEGATIVE = {
+    "不吃辣": ["不吃辣", "不能吃辣", "不要辣", "不喜欢辣", "讨厌辣", "别放辣"],
+    "不吃酸": ["不吃酸", "不能吃酸", "不要酸", "不喜欢酸", "讨厌酸"],
+    "不吃甜": ["不吃甜", "不要甜", "不喜欢甜食", "讨厌甜"],
+    "不吃咸": ["不吃咸", "不要太咸", "不喜欢咸"],
+    "不吃油腻": ["不吃油腻", "不要油腻", "不喜欢油腻", "清淡点"],
+}
+_TASTE_POSITIVE = {
+    "清淡": ["喜欢清淡", "要清淡", "清淡为主", "吃得清淡"],
+    "重口味": ["重口味", "口味要重", "喜欢重口"],
+}
+
 
 def extract_travel_profile(device_id: str, user_message: str) -> list[str]:
     """从用户消息中提取旅行档案信息并存储。返回本次提取到的字段名列表。"""
@@ -44,16 +59,23 @@ def extract_travel_profile(device_id: str, user_message: str) -> list[str]:
 
     # ── 儿童信息 ────────────────────────────────────────
     child_match = re.search(r'(\d+)\s*岁[的小]*(?:孩子|女儿|儿子|宝宝|小孩|儿童)', msg)
+    has_child = False
     if child_match:
         age = int(child_match.group(1))
         if age <= 18:
             save_memory(device_id, "travel_profile", "child_age", str(age))
-            save_memory(device_id, "travel_profile", "composition", "family_child")
+            has_child = True
+            # 婴儿(0-3) vs 儿童(4-12) vs 青少年(13-18)
+            if age <= 3:
+                save_memory(device_id, "travel_profile", "composition", "family_baby")
+            else:
+                save_memory(device_id, "travel_profile", "composition", "family_child")
             extracted.extend(["child_age", "composition"])
 
     # ── 老人信息 ────────────────────────────────────────
     elder_keywords = ["爸妈", "父母", "爷爷", "奶奶", "外公", "外婆", "长辈", "老人"]
-    if any(w in msg for w in elder_keywords):
+    has_elder = any(w in msg for w in elder_keywords)
+    if has_elder:
         elder_count = (
             msg.count("爸") + msg.count("妈")
             + msg.count("爷") + msg.count("奶")
@@ -64,7 +86,12 @@ def extract_travel_profile(device_id: str, user_message: str) -> list[str]:
         elder_count = min(elder_count, 4)
         save_memory(device_id, "travel_profile", "elder_count", str(elder_count))
         extracted.append("elder_count")
-        if not child_match:
+        # 同时有小孩和老人 → family_child_elder
+        if has_child:
+            save_memory(device_id, "travel_profile", "composition", "family_child_elder")
+            if "composition" not in extracted:
+                extracted.append("composition")
+        elif not child_match:
             save_memory(device_id, "travel_profile", "composition", "family_elder")
             extracted.append("composition")
 
@@ -100,19 +127,43 @@ def extract_travel_profile(device_id: str, user_message: str) -> list[str]:
         save_memory(device_id, "travel_profile", "interests", json.dumps(merged, ensure_ascii=False))
         extracted.append("interests")
 
-    # ── 饮食忌口 ────────────────────────────────────────
+    # ── 饮食忌口（仅过敏/医嘱相关，口味偏好归 taste_preference）──
     new_dietary: list[str] = []
-    if "不吃辣" in msg or "不能吃辣" in msg or "不吃辣的" in msg:
-        new_dietary.append("不辣")
     if "海鲜" in msg and ("过敏" in msg or "不能吃" in msg or "不吃" in msg):
-        new_dietary.append("不吃海鲜")
+        new_dietary.append("海鲜过敏")
+    if "芒果" in msg and ("过敏" in msg or "不能吃" in msg):
+        new_dietary.append("芒果过敏")
     if "素食" in msg or "吃素" in msg:
         new_dietary.append("素食")
+    if "清真" in msg:
+        new_dietary.append("清真")
+    if "医嘱" in msg or "医生说" in msg:
+        # 医嘱忌口：提取具体忌口内容
+        if "辣" in msg:
+            new_dietary.append("医嘱忌辣")
+        if "酒" in msg:
+            new_dietary.append("医嘱忌酒")
+        if "海鲜" in msg:
+            new_dietary.append("医嘱忌海鲜")
     if new_dietary:
         existing = _get_profile_field(device_id, "dietary", [])
         merged = list(dict.fromkeys(existing + new_dietary))
         save_memory(device_id, "travel_profile", "dietary", json.dumps(merged, ensure_ascii=False))
         extracted.append("dietary")
+
+    # ── 口味偏好（不喜欢/喜欢什么口味）────────────────────
+    new_taste: list[str] = []
+    for taste_val, keywords in _TASTE_NEGATIVE.items():
+        if any(kw in msg for kw in keywords):
+            new_taste.append(taste_val)
+    for taste_val, keywords in _TASTE_POSITIVE.items():
+        if any(kw in msg for kw in keywords):
+            new_taste.append(taste_val)
+    if new_taste:
+        existing = _get_profile_field(device_id, "taste_preference", [])
+        merged = list(dict.fromkeys(existing + new_taste))
+        save_memory(device_id, "travel_profile", "taste_preference", json.dumps(merged, ensure_ascii=False))
+        extracted.append("taste_preference")
 
     # ── 住宿偏好 ────────────────────────────────────────
     if "民宿" in msg:
@@ -272,6 +323,7 @@ def get_travel_profile_text(device_id: str) -> str:
         "fitness_level": "体力水平",
         "photo_need": "拍照需求",
         "dietary": "饮食忌口",
+        "taste_preference": "口味偏好",
         "accommodation": "住宿偏好",
         "atmosphere": "氛围偏好",
         "budget_daily": "日均预算",
@@ -286,8 +338,10 @@ def get_travel_profile_text(device_id: str) -> str:
     COMPOSITION_MAP = {
         "solo": "独自出行",
         "couple": "情侣出行",
-        "family_child": "家庭（带娃）",
+        "family_baby": "家庭（带婴儿）",
+        "family_child": "家庭（带小孩）",
         "family_elder": "家庭（带老人）",
+        "family_child_elder": "家庭（带小孩+老人）",
         "group": "多人结伴",
     }
 
@@ -301,9 +355,9 @@ def get_travel_profile_text(device_id: str) -> str:
     lines = []
     for key in [
         "group_size", "composition", "child_age", "elder_count",
-        "travel_style", "interests", "dietary", "accommodation",
-        "budget_daily", "budget_tier", "allergies", "special_needs",
-        "departure_city",
+        "travel_style", "interests", "taste_preference", "dietary",
+        "accommodation", "budget_daily", "budget_tier",
+        "allergies", "special_needs", "departure_city",
     ]:
         val = profile.get(key, "")
         if not val:

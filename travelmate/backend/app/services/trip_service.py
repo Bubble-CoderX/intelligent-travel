@@ -174,6 +174,7 @@ async def generate_trip_plan(
     composition = _get_profile_field(device_id, "composition", "")
     child_age = _get_profile_field(device_id, "child_age", "")
     elder_count = _get_profile_field(device_id, "elder_count", "")
+    taste_preference = _get_profile_field(device_id, "taste_preference", [])
 
     health_parts = []
     if allergies:
@@ -188,9 +189,15 @@ async def generate_trip_plan(
         health_parts.append(f"- 特殊需求：{needs_str}")
         if "携带婴儿" in (special_needs if isinstance(special_needs, list) else []):
             health_parts.append("  → 携带婴儿：每2小时安排休息点，推荐有母婴室的景点")
-    if composition == "family_child" and child_age:
-        health_parts.append(f"- 带{child_age}岁儿童出行：行程节奏放缓，每天安排休息时间")
-    if composition == "family_elder" and elder_count:
+    if taste_preference:
+        taste_str = "、".join(taste_preference) if isinstance(taste_preference, list) else str(taste_preference)
+        health_parts.append(f"- 口味偏好：{taste_str}")
+    if composition in ("family_child", "family_baby") and child_age:
+        age_label = "婴儿" if composition == "family_baby" else "儿童"
+        health_parts.append(f"- 带{child_age}岁{age_label}出行：行程节奏放缓，每天安排休息时间")
+    if composition == "family_child_elder" and child_age and elder_count:
+        health_parts.append(f"- 带{child_age}岁儿童 + {elder_count}位老人出行：行程节奏放缓，优先无障碍景点，每天安排休息时间")
+    elif composition == "family_elder" and elder_count:
         health_parts.append(f"- 带{elder_count}位老人出行：避免爬山/走栈道，优先无障碍景点")
 
     health_text = "\n".join(health_parts) if health_parts else "无特殊健康或人群需求"
