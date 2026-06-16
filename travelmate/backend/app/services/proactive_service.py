@@ -347,6 +347,9 @@ async def generate_greeting(device_id: str, client_ip: str | None = None) -> dic
     weather_text = "未知"
     city = resolve_location(device_id, client_ip)
     if city:
+        # 英文城市名 → 中文翻译
+        from app.api.weather import _EN_TO_CN_CITY
+        city = _EN_TO_CN_CITY.get(city, city)
         try:
             from app.services.weather_service import get_weather_with_fallback
             data = await get_weather_with_fallback(city)

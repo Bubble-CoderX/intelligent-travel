@@ -95,8 +95,8 @@ async def create_session(req: CreateSessionRequest):
 
     conn = get_db()
     conn.execute(
-        "INSERT INTO sessions (session_id, device_id, title, created_at) VALUES (?, ?, ?, ?)",
-        (session_id, req.device_id, title, local_time),
+        "INSERT INTO sessions (session_id, device_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+        (session_id, req.device_id, title, local_time, local_time),
     )
     conn.commit()
     conn.close()

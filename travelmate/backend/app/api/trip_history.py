@@ -66,11 +66,14 @@ def save_trip_history(
         if not title and days:
             title = f"{itinerary.get('destination', '')}{len(days)}日游"
 
+        from datetime import datetime, timezone, timedelta
+        local_time = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M:%S")
+
         db.execute(
             """INSERT INTO trip_history
             (device_id, session_id, title, destination, departure_city,
-             days, group_size, composition, budget_total, itinerary_json, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'planned')""",
+             days, group_size, composition, budget_total, itinerary_json, status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'planned', ?)""",
             (
                 device_id,
                 session_id,
@@ -82,6 +85,7 @@ def save_trip_history(
                 itinerary.get("composition", ""),
                 itinerary.get("estimated_budget", 0),
                 json.dumps(itinerary, ensure_ascii=False),
+                local_time,
             ),
         )
         db.commit()

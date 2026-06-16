@@ -157,11 +157,15 @@ async def generate_trip_plan(
     if daily_budget > 0:
         total_budget = daily_budget * group_size * days
         travel_profile_text += (
-            f"\n\n## 预算计算（必须遵守）"
-            f"\n- 日均预算{daily_budget}元是**每人每天**的标准"
-            f"\n- 本次行程：{daily_budget}元/人/天 × {group_size}人 × {days}天 = **总预算{total_budget}元**"
+            f"\n\n## 预算计算（必须遵守，所有费用按此计算）"
+            f"\n- 日均预算{daily_budget}元是**每人每天**的标准（人均）"
+            f"\n- 出行人数：{group_size}人"
+            f"\n- 总预算 = {daily_budget}元/人/天 × {group_size}人 × {days}天 = **总预算{total_budget}元**"
+            f"\n- **每个品类（交通/住宿/餐饮/门票）的费用都必须按{group_size}人计算**"
+            f"\n- 例如：高铁票 = 单程票价 × {group_size}人 × 2（往返）"
+            f"\n- 例如：住宿 = 每晚房价 × {max(1, group_size // 2 + (1 if group_size % 2 else 0))}间 × {max(1, days - 1)}晚"
             f"\n- 预算估算(estimated_budget)必须填写{total_budget}元"
-            f"\n- 各项费用（交通/住宿/餐饮/门票）的总和不得超过{total_budget}元"
+            f"\n- 各项费用的总和不得超过{total_budget}元"
         )
 
     # ── O2: 健康信息提取 ───────────────────────────────
@@ -202,24 +206,25 @@ async def generate_trip_plan(
         pass
 
     # ── O2: 交通推荐（出发地 → 目的地） ──────────────────
-    # 优先级：用户消息传入 > profile存储 > IP定位
+    # 优先级：用户消息传入 > IP定位（每次重新获取）> profile兜底
     if not departure:
-        departure = _get_profile_field(device_id, "departure_city", "")
-
-    # 出发地为空 → 自动IP定位获取
-    if not departure or departure in ("未知", ""):
+        # 每次都重新获取当前位置，不依赖 profile 中的旧数据
         try:
             resp = httpx.get("http://ip-api.com/json/?lang=zh-CN", timeout=3)
             data = resp.json()
             if data.get("status") == "success":
-                departure = data.get("city", "")
-                if departure:
-                    from app.api.weather import _EN_TO_CN_CITY
-                    departure = _EN_TO_CN_CITY.get(departure, departure)
-                    from app.services.memory_service import save_memory
-                    save_memory(device_id, "travel_profile", "departure_city", departure)
+                departure = data.get("city")
         except Exception:
             pass
+
+    # IP 也失败时，才用 profile 兜底
+    if not departure or departure in ("未知", ""):
+        departure = _get_profile_field(device_id, "departure_city", "")
+
+    # 英文城市名 → 中文翻译
+    if departure:
+        from app.api.weather import _EN_TO_CN_CITY
+        departure = _EN_TO_CN_CITY.get(departure, departure)
 
     # 出发地=目的地 → 本地游，不需要大交通
     if departure and departure == destination:

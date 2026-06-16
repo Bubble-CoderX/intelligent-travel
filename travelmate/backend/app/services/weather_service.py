@@ -104,10 +104,12 @@ def _persist_weather(city: str, weather_data: dict) -> None:
             except Exception:
                 pass
 
+        from datetime import datetime, timezone, timedelta
+        local_time = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M:%S")
         conn = get_db()
         conn.execute(
-            "INSERT INTO weather_records (city, weather, temperature, humidity, wind_direction, wind_power, forecast_json) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO weather_records (city, weather, temperature, humidity, wind_direction, wind_power, forecast_json, fetched_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 city,
                 today.get("day_weather", ""),
@@ -116,6 +118,7 @@ def _persist_weather(city: str, weather_data: dict) -> None:
                 today.get("day_wind", ""),
                 today.get("night_wind", ""),
                 json.dumps(weather_data, ensure_ascii=False),
+                local_time,
             ),
         )
         conn.commit()

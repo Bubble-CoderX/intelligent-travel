@@ -96,7 +96,7 @@ function displayValue(item: PrefItem): string {
   if (item.key === 'travel_style') return styleMap[item.value] ?? item.value
   if (item.key === 'transport_preference') return transportMap[item.value] ?? item.value
   if (item.key === 'budget_tier') return budgetTierMap[item.value] ?? item.value
-  if (item.key === 'budget_daily') return `${item.value} 元/天`
+  if (item.key === 'budget_daily') return `${item.value} 元/人/天`
   return item.value
 }
 
@@ -256,15 +256,14 @@ onMounted(fetchPrefs)
                   <div>
                     <div class="text-xs text-stone-400 dark:text-stone-500">💰 日均预算</div>
                     <div class="mt-0.5 text-sm font-medium text-stone-700 dark:text-stone-200">
-                      {{ getProfileVal('budget_daily') ? `${getProfileVal('budget_daily')} 元/天` : '未设置' }}
+                      {{ getProfileVal('budget_daily') ? `${getProfileVal('budget_daily')} 元/人/天` : '未设置' }}
                     </div>
                   </div>
-                  <button class="text-xs text-stone-400 hover:text-stone-600 dark:hover:text-stone-200" @click="startEditBudget">编辑</button>
+                  <button class="text-xs font-medium" :class="showEdit === 'budget' ? 'text-red-500 hover:text-red-700' : 'text-stone-400 hover:text-stone-600 dark:hover:text-stone-200'" @click="showEdit === 'budget' ? showEdit = null : startEditBudget()">{{ showEdit === 'budget' ? '关闭' : '编辑' }}</button>
                 </div>
-                <!-- 编辑态 -->
                 <div v-if="showEdit === 'budget'" class="mt-2 flex gap-2">
                   <input v-model="editBudget" type="number" placeholder="如 500" class="flex-1 rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-sm outline-none focus:border-stone-400 dark:border-stone-600 dark:bg-[#2a2a2a] dark:text-stone-200" />
-                  <button class="rounded-lg bg-stone-800 px-3 py-1.5 text-xs font-medium text-white dark:bg-stone-200 dark:text-stone-800" @click="saveBudget">保存</button>
+                  <button class="rounded-lg px-3 py-1.5 text-xs font-medium disabled:opacity-40 dark:disabled:opacity-40" :class="editBudget.trim() ? 'bg-stone-800 text-white dark:bg-stone-200 dark:text-stone-800' : 'bg-stone-300 text-stone-500 cursor-not-allowed dark:bg-stone-600 dark:text-stone-400'" :disabled="!editBudget.trim()" @click="saveBudget">保存</button>
                 </div>
               </div>
 
@@ -277,7 +276,7 @@ onMounted(fetchPrefs)
                       {{ (() => { const raw = getProfileVal('allergies'); if (!raw) return '未设置'; try { return JSON.parse(raw).join('、') } catch { return raw } })() }}
                     </div>
                   </div>
-                  <button class="text-xs text-stone-400 hover:text-stone-600 dark:hover:text-stone-200" @click="startEditAllergies">编辑</button>
+                  <button class="text-xs font-medium" :class="showEdit === 'allergies' ? 'text-red-500 hover:text-red-700' : 'text-stone-400 hover:text-stone-600 dark:hover:text-stone-200'" @click="showEdit === 'allergies' ? showEdit = null : startEditAllergies()">{{ showEdit === 'allergies' ? '关闭' : '编辑' }}</button>
                 </div>
                 <div v-if="showEdit === 'allergies'" class="mt-2">
                   <input v-model="editAllergies" placeholder="用顿号分隔，如：花粉过敏、鼻炎" class="w-full rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-sm outline-none focus:border-stone-400 dark:border-stone-600 dark:bg-[#2a2a2a] dark:text-stone-200" />
@@ -287,7 +286,7 @@ onMounted(fetchPrefs)
                       @click="editAllergies = editAllergies ? editAllergies + '、' + opt : opt"
                     >{{ opt }}</button>
                   </div>
-                  <button class="mt-2 rounded-lg bg-stone-800 px-3 py-1.5 text-xs font-medium text-white dark:bg-stone-200 dark:text-stone-800" @click="saveAllergies">保存</button>
+                  <button class="mt-2 rounded-lg px-3 py-1.5 text-xs font-medium disabled:opacity-40 dark:disabled:opacity-40" :class="editAllergies.trim() ? 'bg-stone-800 text-white dark:bg-stone-200 dark:text-stone-800' : 'bg-stone-300 text-stone-500 cursor-not-allowed dark:bg-stone-600 dark:text-stone-400'" :disabled="!editAllergies.trim()" @click="saveAllergies">保存</button>
                 </div>
               </div>
 
@@ -300,7 +299,7 @@ onMounted(fetchPrefs)
                       {{ (() => { const raw = getProfileVal('special_needs'); if (!raw) return '未设置'; try { return JSON.parse(raw).join('、') } catch { return raw } })() }}
                     </div>
                   </div>
-                  <button class="text-xs text-stone-400 hover:text-stone-600 dark:hover:text-stone-200" @click="startEditSpecialNeeds">编辑</button>
+                  <button class="text-xs font-medium" :class="showEdit === 'special_needs' ? 'text-red-500 hover:text-red-700' : 'text-stone-400 hover:text-stone-600 dark:hover:text-stone-200'" @click="showEdit === 'special_needs' ? showEdit = null : startEditSpecialNeeds()">{{ showEdit === 'special_needs' ? '关闭' : '编辑' }}</button>
                 </div>
                 <div v-if="showEdit === 'special_needs'" class="mt-2">
                   <input v-model="editSpecialNeeds" placeholder="用顿号分隔，如：携带婴儿、行动不便" class="w-full rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-sm outline-none focus:border-stone-400 dark:border-stone-600 dark:bg-[#2a2a2a] dark:text-stone-200" />
@@ -310,7 +309,7 @@ onMounted(fetchPrefs)
                       @click="editSpecialNeeds = editSpecialNeeds ? editSpecialNeeds + '、' + opt : opt"
                     >{{ opt }}</button>
                   </div>
-                  <button class="mt-2 rounded-lg bg-stone-800 px-3 py-1.5 text-xs font-medium text-white dark:bg-stone-200 dark:text-stone-800" @click="saveSpecialNeeds">保存</button>
+                  <button class="mt-2 rounded-lg px-3 py-1.5 text-xs font-medium disabled:opacity-40 dark:disabled:opacity-40" :class="editSpecialNeeds.trim() ? 'bg-stone-800 text-white dark:bg-stone-200 dark:text-stone-800' : 'bg-stone-300 text-stone-500 cursor-not-allowed dark:bg-stone-600 dark:text-stone-400'" :disabled="!editSpecialNeeds.trim()" @click="saveSpecialNeeds">保存</button>
                 </div>
               </div>
 
