@@ -50,12 +50,22 @@ def extract_travel_profile(device_id: str, user_message: str) -> list[str]:
     extracted: list[str] = []
 
     # ── 出行人数 ────────────────────────────────────────
-    num_match = re.search(r'(\d+)\s*(?:个人|人|个人一起|个人去|个朋友)', msg)
-    if num_match:
-        count = int(num_match.group(1))
+    # 优先匹配"一家X口"（更准确），支持阿拉伯数字和中文数字
+    _CN_NUM = {"一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}
+    family_match = re.search(r'一家([一二两三四五六七八九十\d])口', msg)
+    if family_match:
+        raw = family_match.group(1)
+        count = _CN_NUM.get(raw, int(raw) if raw.isdigit() else 0)
         if 1 <= count <= 20:
             save_memory(device_id, "travel_profile", "group_size", str(count))
             extracted.append("group_size")
+    else:
+        num_match = re.search(r'(\d+)\s*(?:个人|人|个人一起|个人去|个朋友)', msg)
+        if num_match:
+            count = int(num_match.group(1))
+            if 1 <= count <= 20:
+                save_memory(device_id, "travel_profile", "group_size", str(count))
+                extracted.append("group_size")
 
     # ── 儿童信息 ────────────────────────────────────────
     child_match = re.search(r'(\d+)\s*岁[的小]*(?:孩子|女儿|儿子|宝宝|小孩|儿童)', msg)
