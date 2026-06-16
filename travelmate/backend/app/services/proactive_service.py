@@ -350,6 +350,10 @@ async def generate_greeting(device_id: str, client_ip: str | None = None) -> dic
         # 英文城市名 → 中文翻译
         from app.api.weather import _EN_TO_CN_CITY
         city = _EN_TO_CN_CITY.get(city, city)
+        # 保存当前城市和出发地到出行档案
+        from app.services.memory_service import save_memory as _save_mem
+        _save_mem(device_id, "travel_profile", "current_city", city)
+        _save_mem(device_id, "travel_profile", "departure_city", city)
         try:
             from app.services.weather_service import get_weather_with_fallback
             data = await get_weather_with_fallback(city)
