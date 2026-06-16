@@ -355,7 +355,7 @@ onMounted(fetchPrefs)
                 <div v-if="showEdit === 'allergies'" class="mt-2">
                   <input v-model="editAllergies" placeholder="用顿号分隔，如：花粉过敏、鼻炎" class="w-full rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-sm outline-none focus:border-stone-400 dark:border-stone-600 dark:bg-[#2a2a2a] dark:text-stone-200" />
                   <div class="mt-1.5 flex flex-wrap gap-1">
-                    <button v-for="opt in ['花粉过敏','季节性鼻炎','尘螨过敏','宠物毛发过敏']" :key="opt"
+                    <button v-for="opt in ['花粉过敏','季节性鼻炎','尘螨过敏','宠物毛发过敏','紫外线过敏','金属过敏']" :key="opt"
                       class="rounded-full border border-stone-200 bg-white px-2 py-0.5 text-[10px] text-stone-500 hover:border-stone-400 dark:border-stone-600 dark:bg-[#2a2a2a] dark:text-stone-400"
                       @click="editAllergies = editAllergies ? editAllergies + '、' + opt : opt"
                     >{{ opt }}</button>
@@ -378,7 +378,7 @@ onMounted(fetchPrefs)
                 <div v-if="showEdit === 'special_needs'" class="mt-2">
                   <input v-model="editSpecialNeeds" placeholder="用顿号分隔，如：携带婴儿、行动不便" class="w-full rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-sm outline-none focus:border-stone-400 dark:border-stone-600 dark:bg-[#2a2a2a] dark:text-stone-200" />
                   <div class="mt-1.5 flex flex-wrap gap-1">
-                    <button v-for="opt in ['携带婴儿','行动不便','轮椅需求','携带宠物','素食','清真']" :key="opt"
+                    <button v-for="opt in ['携带婴儿','携带幼儿','孕妇出行','行动不便','携带宠物','高血压','糖尿病','近视']" :key="opt"
                       class="rounded-full border border-stone-200 bg-white px-2 py-0.5 text-[10px] text-stone-500 hover:border-stone-400 dark:border-stone-600 dark:bg-[#2a2a2a] dark:text-stone-400"
                       @click="editSpecialNeeds = editSpecialNeeds ? editSpecialNeeds + '、' + opt : opt"
                     >{{ opt }}</button>

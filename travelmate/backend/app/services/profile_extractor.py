@@ -171,24 +171,31 @@ def extract_travel_profile(device_id: str, user_message: str) -> list[str]:
         save_memory(device_id, "travel_profile", "interests", json.dumps(merged, ensure_ascii=False))
         extracted.append("interests")
 
-    # ── 饮食忌口（仅过敏/医嘱相关，口味偏好归 taste_preference）──
+    # ── 饮食忌口（不能吃什么 / 食物过敏 / 医嘱限制 / 素食清真）──
+    _FOOD_WORDS = [
+        "海鲜", "芒果", "花生", "牛奶", "鸡蛋", "大豆", "坚果", "小麦",
+        "虾", "蟹", "鱼", "螺", "贝", "桃", "菠萝", "猕猴桃", "草莓",
+        "酒精", "酒", "咖啡", "茶", "辣椒", "辣", "海鲜", "内脏",
+    ]
     new_dietary: list[str] = []
-    if "海鲜" in msg and ("过敏" in msg or "不能吃" in msg or "不吃" in msg):
-        new_dietary.append("海鲜过敏")
-    if "芒果" in msg and ("过敏" in msg or "不能吃" in msg):
-        new_dietary.append("芒果过敏")
+    # 通用："不能吃X" / "吃不了X" / "对X过敏" / "X过敏"
+    for food in _FOOD_WORDS:
+        if food in msg and ("不能吃" in msg or "吃不了" in msg or "不让吃" in msg):
+            restriction = f"不能吃{food}" if len(food) <= 3 else f"不能吃{food}"
+            new_dietary.append(restriction)
+        if food in msg and "过敏" in msg:
+            new_dietary.append(f"{food}过敏")
+    # 素食 / 清真
     if "素食" in msg or "吃素" in msg:
         new_dietary.append("素食")
     if "清真" in msg:
         new_dietary.append("清真")
+    # 医嘱限制
     if "医嘱" in msg or "医生说" in msg:
-        # 医嘱忌口：提取具体忌口内容
-        if "辣" in msg:
-            new_dietary.append("医嘱忌辣")
-        if "酒" in msg:
-            new_dietary.append("医嘱忌酒")
-        if "海鲜" in msg:
-            new_dietary.append("医嘱忌海鲜")
+        if "辣" in msg: new_dietary.append("医嘱忌辣")
+        if "酒" in msg: new_dietary.append("医嘱忌酒")
+        if "海鲜" in msg: new_dietary.append("医嘱忌海鲜")
+        if "冷" in msg or "凉" in msg: new_dietary.append("医嘱忌生冷")
     if new_dietary:
         existing = _get_profile_field(device_id, "dietary", [])
         merged = list(dict.fromkeys(existing + new_dietary))
@@ -236,11 +243,26 @@ def extract_travel_profile(device_id: str, user_message: str) -> list[str]:
                 save_memory(device_id, "travel_profile", "accommodation", "高档酒店")
                 extracted.append("accommodation")
 
-    # ── 过敏史 ──────────────────────────────────────────
+    # ── 过敏史（非食物过敏留过敏史，食物过敏归饮食忌口）──
+    _FOOD_ALLERGY_PATTERNS = [
+        "海鲜过敏", "芒果过敏", "花生过敏", "牛奶过敏", "鸡蛋过敏",
+        "虾过敏", "蟹过敏", "鱼过敏", "坚果过敏", "大豆过敏",
+        "酒精过敏", "酒过敏", "菠萝过敏", "猕猴桃过敏", "草莓过敏",
+    ]
     new_allergies: list[str] = []
+    # 预定义的非食物过敏（花粉/鼻炎/尘螨/宠物毛发）
     for allergy_name, keywords in _ALLERGY_KEYWORDS.items():
         if any(kw in msg for kw in keywords):
             new_allergies.append(allergy_name)
+    # 通用食物过敏：检测"X过敏"模式，如果是食物则归饮食忌口
+    allergy_match = re.findall(r'([一-鿿]{1,6})过敏', msg)
+    for item in allergy_match:
+        if item in [kw for kws in _ALLERGY_KEYWORDS.values() for kw in kws]:
+            continue  # 已在上面处理
+        if any(food in item for food in _FOOD_WORDS):
+            # 食物过敏 → 归饮食忌口（已在上面处理）
+            continue
+        new_allergies.append(f"{item}过敏")
     if new_allergies:
         existing = _get_profile_field(device_id, "allergies", [])
         merged = list(dict.fromkeys(existing + new_allergies))
