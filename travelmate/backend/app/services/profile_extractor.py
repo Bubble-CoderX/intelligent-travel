@@ -277,6 +277,8 @@ def extract_travel_profile(device_id: str, user_message: str) -> list[str]:
         new_allergies.append(f"{item}过敏")
     if new_allergies:
         existing = _get_profile_field(device_id, "allergies", [])
+        # 清理脏数据：疑问词匹配、单字等无效条目
+        existing = [e for e in existing if len(e) >= 3 and not any(q in e for q in _ALLERGY_EXCLUDE)]
         merged = list(dict.fromkeys(existing + new_allergies))
         save_memory(device_id, "travel_profile", "allergies", json.dumps(merged, ensure_ascii=False))
         extracted.append("allergies")
