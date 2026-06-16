@@ -67,6 +67,7 @@ const PROFILE_FIELDS: ProfileFieldDef[] = [
   { key: 'budget_tier', label: '预算等级', type: 'map', map: {} as Record<string, string>, alwaysShow: true },
   // 区域三：健康信息
   { key: 'special_needs', label: '特殊需求', type: 'list', alwaysShow: true },
+  { key: 'allergies', label: '过敏史', type: 'list', alwaysShow: true },
 ]
 
 const compositionMap: Record<string, string> = {

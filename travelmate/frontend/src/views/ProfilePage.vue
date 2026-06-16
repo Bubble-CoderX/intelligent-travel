@@ -75,6 +75,7 @@ const PROFILE_FIELDS: ProfileFieldDef[] = [
   { key: 'accommodation', label: '住宿偏好', type: 'text', alwaysShow: true },
   { key: 'budget_tier', label: '预算等级', type: 'map', map: BUDGET_TIER_MAP, alwaysShow: true },
   { key: 'special_needs', label: '特殊需求', type: 'list', alwaysShow: true },
+  { key: 'allergies', label: '过敏史', type: 'list', alwaysShow: true },
 ]
 
 function getProfileItem(key: string): PrefItem | undefined {
