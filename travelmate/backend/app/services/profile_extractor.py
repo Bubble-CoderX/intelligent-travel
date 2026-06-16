@@ -281,6 +281,31 @@ def extract_travel_profile(device_id: str, user_message: str) -> list[str]:
             save_memory(device_id, "travel_profile", "budget_tier", tier_info["tier"])
             extracted.extend(["budget_daily", "budget_tier"])
 
+    # ── 特殊需求（健康状况/出行限制）─────────────────────
+    _HEALTH_CONDITIONS = {
+        "高血压": ["高血压", "血压高"],
+        "糖尿病": ["糖尿病", "血糖高"],
+        "心脏病": ["心脏病", "心脏不好"],
+        "哮喘": ["哮喘"],
+        "腰椎间盘突出": ["腰椎", "腰不好"],
+        "膝关节不好": ["膝盖", "膝关节"],
+        "孕妇": ["怀孕", "孕妇", "有身孕"],
+    }
+    new_needs: list[str] = []
+    for need_name, keywords in _HEALTH_CONDITIONS.items():
+        if any(kw in msg for kw in keywords):
+            new_needs.append(need_name)
+    # 通用：X不好/有X（如"腿脚不好"）
+    general_match = re.findall(r'([一-鿿]{1,4})(?:不好|有问题|不便|困难)', msg)
+    for item in general_match:
+        if len(item) >= 2 and item not in [n for n in _HEALTH_CONDITIONS]:
+            new_needs.append(f"{item}不便")
+    if new_needs:
+        existing = _get_profile_field(device_id, "special_needs", [])
+        merged = list(dict.fromkeys(existing + new_needs))
+        save_memory(device_id, "travel_profile", "special_needs", json.dumps(merged, ensure_ascii=False))
+        extracted.append("special_needs")
+
     if extracted:
         logger.info("旅行档案提取：%s → %s", device_id, extracted)
 

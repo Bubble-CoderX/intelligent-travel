@@ -62,8 +62,11 @@ const PROFILE_FIELDS: ProfileFieldDef[] = [
   { key: 'travel_style', label: '旅行风格', type: 'map', map: {} as Record<string, string>, alwaysShow: true },
   { key: 'interests', label: '兴趣标签', type: 'list', alwaysShow: true },
   { key: 'taste_preference', label: '口味偏好', type: 'list', alwaysShow: true },
+  { key: 'dietary', label: '饮食忌口', type: 'list', alwaysShow: true },
   { key: 'accommodation', label: '住宿偏好', type: 'text', alwaysShow: true },
   { key: 'budget_tier', label: '预算等级', type: 'map', map: {} as Record<string, string>, alwaysShow: true },
+  // 区域三：健康信息
+  { key: 'special_needs', label: '特殊需求', type: 'list', alwaysShow: true },
 ]
 
 const compositionMap: Record<string, string> = {

@@ -71,8 +71,10 @@ const PROFILE_FIELDS: ProfileFieldDef[] = [
   { key: 'travel_style', label: '旅行风格', type: 'map', map: STYLE_MAP, alwaysShow: true },
   { key: 'interests', label: '兴趣标签', type: 'list', alwaysShow: true },
   { key: 'taste_preference', label: '口味偏好', type: 'list', alwaysShow: true },
+  { key: 'dietary', label: '饮食忌口', type: 'list', alwaysShow: true },
   { key: 'accommodation', label: '住宿偏好', type: 'text', alwaysShow: true },
   { key: 'budget_tier', label: '预算等级', type: 'map', map: BUDGET_TIER_MAP, alwaysShow: true },
+  { key: 'special_needs', label: '特殊需求', type: 'list', alwaysShow: true },
 ]
 
 function getProfileItem(key: string): PrefItem | undefined {
