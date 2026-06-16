@@ -92,22 +92,29 @@ onMounted(fetchTrips)
           :class="props.dark ? 'border-stone-700 bg-[#2a2a2a] hover:bg-[#333]' : 'border-stone-200 bg-white hover:bg-stone-50'"
           @click="viewDetail(trip.id)"
         >
-          <div class="flex items-center justify-between mb-2">
-            <h3 class="font-semibold" :class="props.dark ? 'text-stone-200' : 'text-stone-800'">{{ trip.title || `${trip.destination}${trip.days}日游` }}</h3>
-            <span class="rounded-full px-2.5 py-0.5 text-xs font-medium" :class="statusMap[trip.status]?.color">
-              {{ statusMap[trip.status]?.label || trip.status }}
-            </span>
-            <button v-if="trip.status === 'planned'" class="text-[10px] text-green-500 hover:text-green-700 ml-1" @click.stop="markComplete(trip.id)">✓完成</button>
+          <div class="flex gap-3">
+            <!-- 左侧：标题和信息 -->
+            <div class="min-w-0 flex-1">
+              <h3 class="font-semibold truncate" :class="props.dark ? 'text-stone-200' : 'text-stone-800'">{{ trip.title || `${trip.destination}${trip.days}日游` }}</h3>
+              <div class="mt-1 flex flex-wrap gap-2 text-xs" :class="props.dark ? 'text-stone-400' : 'text-stone-500'">
+                <span v-if="trip.departure_city">🚗 {{ trip.departure_city }}→{{ trip.destination }}</span>
+                <span v-else>📍 {{ trip.destination }}</span>
+                <span>📅 {{ trip.days }}天</span>
+                <span>👥 {{ trip.group_size }}人{{ trip.composition ? '(' + (compositionMap[trip.composition] || trip.composition) + ')' : '' }}</span>
+                <span v-if="trip.budget_total">💰 ¥{{ Math.round(trip.budget_total) }}</span>
+              </div>
+              <div class="mt-1 text-xs" :class="props.dark ? 'text-stone-600' : 'text-stone-300'">创建于 {{ formatDate(trip.created_at) }}</div>
+            </div>
+            <!-- 右侧：状态 + 按钮（固定宽度，不被标题挤压） -->
+            <div class="flex flex-col items-end shrink-0 gap-1 ml-2">
+              <span class="rounded-full px-2.5 py-0.5 text-[11px] font-medium whitespace-nowrap" :class="statusMap[trip.status]?.color">
+                {{ statusMap[trip.status]?.label || trip.status }}
+              </span>
+              <button v-if="trip.status === 'planned'" class="text-[10px] text-green-500 hover:text-green-700 whitespace-nowrap" @click.stop="markComplete(trip.id)">✓完成</button>
+            </div>
           </div>
-          <div class="flex flex-wrap gap-2 text-xs" :class="props.dark ? 'text-stone-400' : 'text-stone-500'">
-            <span v-if="trip.departure_city">🚗 {{ trip.departure_city }}→{{ trip.destination }}</span>
-            <span v-else>📍 {{ trip.destination }}</span>
-            <span>📅 {{ trip.days }}天</span>
-            <span>👥 {{ trip.group_size }}人{{ trip.composition ? '(' + (compositionMap[trip.composition] || trip.composition) + ')' : '' }}</span>
-            <span v-if="trip.budget_total">💰 ¥{{ Math.round(trip.budget_total) }}</span>
-          </div>
-          <div class="mt-2 text-xs" :class="props.dark ? 'text-stone-600' : 'text-stone-300'">
-            创建于 {{ formatDate(trip.created_at) }}
+          <div class="flex flex-wrap gap-2 text-xs mt-2" :class="props.dark ? 'text-stone-400' : 'text-stone-500'">
+            <span>创建于 {{ formatDate(trip.created_at) }}</span>
           </div>
         </div>
       </div>

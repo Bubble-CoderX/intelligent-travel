@@ -184,10 +184,30 @@ async def chat_stream_endpoint(req: ChatRequest):
         save_message(req.device_id, session_id, "user", req.message, intent)
         save_message(req.device_id, session_id, "assistant", reply, intent, metadata=metadata if metadata else None)
 
+        # 会话自动命名
+        from app.api.sessions import _generate_title, update_session_title
+        from app.models.database import get_db as _get_db
+        _conn = _get_db()
+        _session = _conn.execute(
+            "SELECT title FROM sessions WHERE session_id = ? AND device_id = ?",
+            (session_id, req.device_id),
+        ).fetchone()
+        _conn.close()
+        if _session:
+            current_title = _session["title"] or ""
+            if intent == "TRIP_PLAN" and metadata.get("trip_plan"):
+                dest = metadata.get("destination", "")
+                days = metadata.get("days", 0)
+                if dest:
+                    new_title = f"{dest}·{days}日游" if days else dest
+                    if new_title != current_title:
+                        update_session_title(req.device_id, session_id, new_title)
+            elif current_title in ("新会话", ""):
+                new_title = _generate_title(req.device_id, session_id)
+                if new_title and new_title != "新会话":
+                    update_session_title(req.device_id, session_id, new_title)
+
         async def full_gen():
-            # 保存消息到数据库（含 metadata）
-            save_message(req.device_id, session_id, "user", req.message, intent)
-            save_message(req.device_id, session_id, "assistant", reply, intent, metadata=metadata if metadata else None)
             yield f"data: {json.dumps({'type': 'full', 'content': reply, 'intent': intent, 'metadata': metadata}, ensure_ascii=False)}\n\n"
             yield "data: [DONE]\n\n"
         return StreamingResponse(full_gen(), media_type="text/event-stream")
@@ -225,6 +245,22 @@ async def chat_stream_endpoint(req: ChatRequest):
         # 保存消息
         save_message(req.device_id, session_id, "user", req.message, intent)
         save_message(req.device_id, session_id, "assistant", full_reply, intent)
+
+        # 会话自动命名（流式路径也需执行）
+        from app.api.sessions import _generate_title, update_session_title
+        from app.models.database import get_db as _get_db
+        _conn = _get_db()
+        _session = _conn.execute(
+            "SELECT title FROM sessions WHERE session_id = ? AND device_id = ?",
+            (session_id, req.device_id),
+        ).fetchone()
+        _conn.close()
+        if _session:
+            current_title = _session["title"] or ""
+            if current_title in ("新会话", ""):
+                new_title = _generate_title(req.device_id, session_id)
+                if new_title and new_title != "新会话":
+                    update_session_title(req.device_id, session_id, new_title)
 
         yield "data: [DONE]\n\n"
 
