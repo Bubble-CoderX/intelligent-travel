@@ -263,6 +263,16 @@ async def generate_trip_plan(
     if departure and departure == destination:
         departure = ""
 
+    # 用正确的出发地更新 profile 和 travel_profile_text
+    if departure:
+        from app.services.memory_service import save_memory as _save_dep
+        _save_dep(device_id, "travel_profile", "departure_city", departure)
+        # 替换 travel_profile_text 中旧的出发地
+        import re as _re
+        travel_profile_text = _re.sub(r'- 出发地：.*', f'- 出发地：{departure}', travel_profile_text)
+        if f'出发地：{departure}' not in travel_profile_text:
+            travel_profile_text += f"\n- 出发地：{departure}"
+
     try:
         from app.services.transport_service import get_transport_text
         transport_text = get_transport_text(departure, destination, group_size, budget_tier)
