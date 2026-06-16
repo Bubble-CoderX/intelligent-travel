@@ -65,6 +65,7 @@ interface ProfileFieldDef {
 const PROFILE_FIELDS: ProfileFieldDef[] = [
   { key: 'group_size', label: '出行人数', type: 'text', alwaysShow: true },
   { key: 'composition', label: '人员构成', type: 'map', map: COMPOSITION_MAP, alwaysShow: true },
+  { key: 'child_count', label: '小孩数量', type: 'text', alwaysShow: false, dependsOn: 'composition' },
   { key: 'child_age', label: '儿童年龄', type: 'text', alwaysShow: false, dependsOn: 'composition' },
   { key: 'elder_count', label: '老人数量', type: 'text', alwaysShow: false, dependsOn: 'composition' },
   { key: 'travel_style', label: '旅行风格', type: 'map', map: STYLE_MAP, alwaysShow: true },
@@ -82,7 +83,7 @@ function shouldShowField(field: ProfileFieldDef): boolean {
   if (field.dependsOn) {
     const dep = getProfileItem(field.dependsOn)
     if (!dep) return false
-    if (field.key === 'child_age') return dep.value.includes('child') || dep.value.includes('baby')
+    if (field.key === 'child_age' || field.key === 'child_count') return dep.value.includes('child') || dep.value.includes('baby')
     if (field.key === 'elder_count') return dep.value.includes('elder')
   }
   return !!getProfileItem(field.key)

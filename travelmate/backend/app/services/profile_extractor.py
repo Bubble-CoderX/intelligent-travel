@@ -68,19 +68,53 @@ def extract_travel_profile(device_id: str, user_message: str) -> list[str]:
                 extracted.append("group_size")
 
     # ── 儿童信息 ────────────────────────────────────────
-    child_match = re.search(r'(\d+)\s*岁[的小]*(?:孩子|女儿|儿子|宝宝|小孩|儿童)', msg)
+    _CN_NUM = {"一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}
     has_child = False
-    if child_match:
-        age = int(child_match.group(1))
+    youngest_age = 99  # 记录最小年龄（用于判断是否有婴儿）
+
+    # 匹配"两个孩子""3个小孩"等（提取数量）
+    child_count_match = re.search(r'([一二两三四五六七八九十\d])\s*个?[的小]*(?:孩子|女儿|儿子|宝宝|小孩|儿童)', msg)
+    if child_count_match:
+        raw = child_count_match.group(1)
+        child_count = _CN_NUM.get(raw, int(raw) if raw.isdigit() else 1)
+        child_count = min(child_count, 10)
+        save_memory(device_id, "travel_profile", "child_count", str(child_count))
+        extracted.append("child_count")
+        has_child = True
+
+    # 匹配"5岁的儿子"等（提取年龄）
+    child_age_match = re.search(r'(\d+)\s*岁[的小]*(?:孩子|女儿|儿子|宝宝|小孩|儿童)', msg)
+    if child_age_match:
+        age = int(child_age_match.group(1))
         if age <= 18:
             save_memory(device_id, "travel_profile", "child_age", str(age))
+            youngest_age = min(youngest_age, age)
             has_child = True
-            # 婴儿(0-3) vs 儿童(4-12) vs 青少年(13-18)
-            if age <= 3:
-                save_memory(device_id, "travel_profile", "composition", "family_baby")
-            else:
-                save_memory(device_id, "travel_profile", "composition", "family_child")
-            extracted.extend(["child_age", "composition"])
+            extracted.append("child_age")
+            # 如果没提取到数量，默认1个
+            if "child_count" not in extracted:
+                save_memory(device_id, "travel_profile", "child_count", "1")
+                extracted.append("child_count")
+
+    # 如果提到了孩子但没有具体年龄/数量（如"带着孩子"），默认1个
+    if not has_child and any(w in msg for w in ["带孩子", "带娃", "带小孩", "带宝宝"]):
+        save_memory(device_id, "travel_profile", "child_count", "1")
+        has_child = True
+        extracted.append("child_count")
+
+    # 根据最小年龄判断 composition
+    if has_child:
+        # 如果有多个孩子，读取已存储的child_age作为参考
+        if youngest_age == 99:
+            stored_age = _get_profile_field(device_id, "child_age", "")
+            if stored_age and str(stored_age).isdigit():
+                youngest_age = int(stored_age)
+        if youngest_age <= 3:
+            save_memory(device_id, "travel_profile", "composition", "family_baby")
+        else:
+            save_memory(device_id, "travel_profile", "composition", "family_child")
+        if "composition" not in extracted:
+            extracted.append("composition")
 
     # ── 老人信息 ────────────────────────────────────────
     elder_keywords = ["爸妈", "父母", "爷爷", "奶奶", "外公", "外婆", "长辈", "老人"]
@@ -342,6 +376,7 @@ def get_travel_profile_text(device_id: str) -> str:
     LABEL_MAP = {
         "group_size": "出行人数",
         "composition": "人员构成",
+        "child_count": "小孩数量",
         "child_age": "儿童年龄",
         "elder_count": "老人数量",
         "travel_style": "旅行风格",
@@ -380,7 +415,7 @@ def get_travel_profile_text(device_id: str) -> str:
 
     lines = []
     for key in [
-        "group_size", "composition", "child_age", "elder_count",
+        "group_size", "composition", "child_count", "child_age", "elder_count",
         "travel_style", "interests", "taste_preference", "dietary",
         "accommodation", "budget_daily", "budget_tier",
         "allergies", "special_needs", "departure_city",

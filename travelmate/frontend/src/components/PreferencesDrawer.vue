@@ -55,6 +55,7 @@ const PROFILE_FIELDS: ProfileFieldDef[] = [
   // 区域一：基本信息
   { key: 'group_size', label: '出行人数', type: 'text', alwaysShow: true },
   { key: 'composition', label: '人员构成', type: 'map', map: {} as Record<string, string>, alwaysShow: true },
+  { key: 'child_count', label: '小孩数量', type: 'text', alwaysShow: false, dependsOn: 'composition' },
   { key: 'child_age', label: '儿童年龄', type: 'text', alwaysShow: false, dependsOn: 'composition' },
   { key: 'elder_count', label: '老人数量', type: 'text', alwaysShow: false, dependsOn: 'composition' },
   // 区域二：偏好信息
@@ -120,9 +121,9 @@ function shouldShowField(field: ProfileFieldDef): boolean {
     const dep = getProfileItem(field.dependsOn)
     if (!dep) return false
     // composition 有值且包含 child/elder/baby 关键字时才显示子字段
-    if (field.key === 'child_age' || field.key === 'elder_count') {
+    if (field.key === 'child_age' || field.key === 'child_count' || field.key === 'elder_count') {
       const comp = dep.value
-      if (field.key === 'child_age') return comp.includes('child') || comp.includes('baby')
+      if (field.key === 'child_age' || field.key === 'child_count') return comp.includes('child') || comp.includes('baby')
       if (field.key === 'elder_count') return comp.includes('elder')
     }
   }
