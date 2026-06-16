@@ -309,6 +309,7 @@ async def route_intent(user_message: str, device_id: str, session_id: str | None
                             # 清理destination中的出发地部分
                             destination = re.sub(r'从[一-龥]{2,6}(?:出发|去|到|飞|坐|自驾)', '', full_dest).strip()
                     logger.info("出发地提取: user_message=%.50s → departure=%s, destination=%s", user_message, departure, destination)
+                    print(f"[DEBUG] 出发地提取: departure={departure}, destination={destination}")
 
                     try:
                         result = await generate_trip_plan(

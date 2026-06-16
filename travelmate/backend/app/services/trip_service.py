@@ -121,6 +121,7 @@ async def generate_trip_plan(
     weather_text = _format_weather_text(destination)
     style_instructions = STYLE_INSTRUCTIONS.get(style, "")
     logger.info("行程生成: destination=%s, days=%d, departure=%s", destination, days, departure)
+    print(f"[DEBUG] 行程生成: destination={destination}, days={days}, departure={departure}")
 
     # ── O2: 知识库 RAG 检索（无则自动调研） ─────────────
     knowledge_text = ""
