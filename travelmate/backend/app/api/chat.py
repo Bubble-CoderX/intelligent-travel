@@ -283,40 +283,56 @@ class ImageAnalyzeRequest(BaseModel):
 
 @router.post("/chat/image")
 async def analyze_image(req: ImageAnalyzeRequest):
-    """分析上传的图片（景点识别/菜单翻译/路牌识别等）。"""
+    """O8: 分析上传的图片（千问VL识别 + 自动调研知识库）。"""
     session_id = req.session_id or "default"
 
-    from app.services.llm_client import call_llm
-
-    # 构建带图片的消息
-    messages = [
-        {
-            "role": "user",
-            "content": [
-                {
-                    "type": "image_url",
-                    "image_url": {"url": f"data:image/jpeg;base64,{req.image_base64}"}
-                },
-                {
-                    "type": "text",
-                    "text": req.question or "请分析这张图片，如果是景点请介绍，如果是菜单请翻译，如果是路牌请说明。"
-                },
-            ],
-        }
-    ]
-
+    # 1. 用千问 VL 识别图片内容
     try:
-        reply = await call_llm(
-            messages=messages,
-            system_prompt="你是「AI智游伴」，擅长识别景点、翻译菜单、解读路牌。用简洁友好的语气回答。",
-            temperature=0.5,
-            max_tokens=500,
+        from app.services.qwen_vl_client import analyze_image as qwen_analyze
+        identification = await qwen_analyze(
+            req.image_base64,
+            "请识别这张图片的内容。如果是景点，告诉我景点名称和所在城市。"
+            "如果是美食，告诉我菜品名称。如果是路牌，告诉我位置信息。"
+            "用中文简洁回答，第一行给出识别结果（如：景点：广州塔，城市：广州）。"
         )
     except Exception as exc:
-        logger.warning("图片分析失败: %s", exc)
-        reply = f"图片分析失败：{type(exc).__name__}。请稍后再试。"
+        logger.warning("千问VL识别失败: %s", exc)
+        identification = f"图片识别失败：{type(exc).__name__}"
 
-    # 保存消息
+    # 2. 解析识别结果，提取景点名和城市
+    spot_name = ""
+    city = ""
+    for line in identification.split("\n"):
+        line = line.strip()
+        if "景点" in line or "城市" in line:
+            # 尝试提取 "景点：XXX" 或 "城市：XXX"
+            import re
+            spot_match = re.search(r'景点[：:]\s*(.+?)[，,。\s]', line)
+            city_match = re.search(r'城市[：:]\s*(.+?)[，,。\s]', line)
+            if spot_match:
+                spot_name = spot_match.group(1).strip()
+            if city_match:
+                city = city_match.group(1).strip()
+
+    # 3. 如果识别出景点，自动调研知识库
+    knowledge_msg = ""
+    if spot_name:
+        try:
+            from app.services.knowledge_expander import auto_expand, has_local_knowledge
+            if not has_local_knowledge(spot_name):
+                category = "spots"
+                if city:
+                    # 如果是城市级的景点，保存到城市分类
+                    category = "cities"
+                result = await auto_expand(spot_name, category=category)
+                if result.get("status") == "ok":
+                    knowledge_msg = f"\n\n📚 已自动调研「{spot_name}」的知识信息并保存到知识库。"
+        except Exception as exc:
+            logger.warning("自动调研失败: %s", exc)
+
+    reply = identification + knowledge_msg
+
+    # 4. 保存消息
     save_message(req.device_id, session_id, "user", f"[图片] {req.question or '分析图片'}", "IMAGE")
     save_message(req.device_id, session_id, "assistant", reply, "IMAGE")
 

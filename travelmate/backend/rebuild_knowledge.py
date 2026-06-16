@@ -48,7 +48,7 @@ async def rebuild_all(cities: list[str], skip_existing: bool = False):
 
         print(f"[{i}/{len(cities)}] 生成 {city}...", end=" ", flush=True)
         try:
-            result = await auto_expand(city)
+            result = await auto_expand(city, category="cities")
             if result.get("status") == "ok":
                 chunks = result.get("chunk_count", 0)
                 print(f"OK（{chunks} 段落）")

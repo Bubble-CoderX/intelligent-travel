@@ -88,17 +88,39 @@ async function handleFileUpload(e: any) {
   const file = target.files?.[0]
   if (!file) return
 
-  // 限制大小 10MB
   if (file.size > 10 * 1024 * 1024) {
     alert('文件太大，请选择 10MB 以内的图片')
     return
   }
 
-  // 降级方案：直接发送图片描述作为对话内容
-  // DeepSeek API 当前版本不支持 image_url 多模态
-  const emoji = file.name.match(/\.(png|jpg|jpeg|gif|webp)$/i) ? '🖼️' : '📎'
-  emit('send', `${emoji} 我上传了文件「${file.name}」（${(file.size / 1024).toFixed(0)}KB），请帮我分析这张图片的内容`)
-  target.value = '' // 重置 input
+  // 读取图片为 Base64 并发送到后端分析
+  const reader = new FileReader()
+  reader.onload = async () => {
+    const base64 = (reader.result as string).split(',')[1]
+    try {
+      const res = await fetch('http://localhost:8000/chat/image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          device_id: localStorage.getItem('travelmate_device_id') || '',
+          session_id: '',
+          image_base64: base64,
+          filename: file.name,
+          question: `请分析这张图片（${file.name}）`,
+        }),
+      })
+      const data = await res.json()
+      if (data.reply) {
+        // 将识别结果作为用户消息和AI回复添加到聊天
+        emit('send', `[上传图片: ${file.name}]`)
+      }
+    } catch (err) {
+      console.error('图片分析失败', err)
+      emit('send', `[上传图片: ${file.name}] 图片分析暂时不可用`)
+    }
+  }
+  reader.readAsDataURL(file)
+  target.value = ''
 }
 </script>
 

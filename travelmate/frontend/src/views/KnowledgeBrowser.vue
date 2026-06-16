@@ -20,20 +20,30 @@ const items = ref<KnowledgeItem[]>([])
 const total = ref(0)
 const loading = ref(true)
 const searchKeyword = ref('')
+const selectedCategory = ref('')
 const selectedCity = ref('')
 const cityContent = ref('')
 const loadingContent = ref(false)
+const categories = ref<{ id: string; name: string; count: number }[]>([])
 
 async function fetchKnowledge() {
   loading.value = true
   try {
     const params: Record<string, any> = { limit: 50 }
     if (searchKeyword.value) params.keyword = searchKeyword.value
+    if (selectedCategory.value) params.category = selectedCategory.value
     const res = await api.get('/knowledge-browse/list', { params })
     items.value = res.data.items ?? []
     total.value = res.data.total ?? 0
   } catch { /* ignore */ }
   loading.value = false
+}
+
+async function fetchCategories() {
+  try {
+    const res = await api.get('/knowledge-browse/categories')
+    categories.value = res.data.categories ?? []
+  } catch { /* ignore */ }
 }
 
 async function viewCity(city: string) {
@@ -56,7 +66,7 @@ function renderMd(text: string): string {
     .replace(/\n\n/g, '<br/>')
 }
 
-onMounted(fetchKnowledge)
+onMounted(() => { fetchKnowledge(); fetchCategories() })
 </script>
 
 <template>
@@ -71,15 +81,29 @@ onMounted(fetchKnowledge)
     </div>
 
     <div class="mx-auto max-w-3xl px-4 py-6">
-      <!-- 搜索栏 -->
-      <div class="mb-4">
+      <!-- 搜索栏 + 分类筛选 -->
+      <div class="mb-4 space-y-3">
         <input
           v-model="searchKeyword"
           @input="fetchKnowledge"
-          placeholder="🔍 搜索城市名称..."
+          placeholder="🔍 搜索城市/景点名称..."
           class="w-full rounded-xl border px-4 py-2.5 text-sm outline-none focus:border-stone-400"
           :class="props.dark ? 'border-stone-700 bg-[#2a2a2a] text-stone-200 placeholder:text-stone-500' : 'border-stone-200 bg-white text-stone-800 placeholder:text-stone-400'"
         />
+        <!-- 分类标签 -->
+        <div v-if="categories.length" class="flex flex-wrap gap-1.5">
+          <button
+            class="rounded-full border px-2.5 py-1 text-[11px] transition-colors"
+            :class="!selectedCategory ? 'border-stone-800 bg-stone-800 text-white dark:border-stone-200 dark:bg-stone-200 dark:text-stone-800' : 'border-stone-200 text-stone-500 hover:border-stone-400 dark:border-stone-600 dark:text-stone-400'"
+            @click="selectedCategory = ''; fetchKnowledge()"
+          >全部</button>
+          <button
+            v-for="cat in categories" :key="cat.id"
+            class="rounded-full border px-2.5 py-1 text-[11px] transition-colors"
+            :class="selectedCategory === cat.id ? 'border-stone-800 bg-stone-800 text-white dark:border-stone-200 dark:bg-stone-200 dark:text-stone-800' : 'border-stone-200 text-stone-500 hover:border-stone-400 dark:border-stone-600 dark:text-stone-400'"
+            @click="selectedCategory = cat.id; fetchKnowledge()"
+          >{{ cat.name }} ({{ cat.count }})</button>
+        </div>
       </div>
 
       <div v-if="loading" class="py-12 text-center text-sm text-stone-400">加载中...</div>
@@ -102,7 +126,10 @@ onMounted(fetchKnowledge)
         >
           <div class="flex items-center justify-between mb-2">
             <h3 class="font-semibold text-lg" :class="props.dark ? 'text-stone-200' : 'text-stone-800'">📍 {{ item.city }}</h3>
-            <span class="text-xs" :class="props.dark ? 'text-stone-500' : 'text-stone-400'">{{ item.size_kb }} KB</span>
+            <div class="flex items-center gap-2">
+              <span v-if="item.category" class="rounded-full bg-stone-100 px-2 py-0.5 text-[10px] dark:bg-stone-700 dark:text-stone-400">{{ item.category }}</span>
+              <span class="text-xs" :class="props.dark ? 'text-stone-500' : 'text-stone-400'">{{ item.size_kb }} KB</span>
+            </div>
           </div>
           <p class="text-xs mb-2 line-clamp-2" :class="props.dark ? 'text-stone-400' : 'text-stone-500'">{{ item.description }}</p>
           <div class="flex gap-3 text-xs" :class="props.dark ? 'text-stone-500' : 'text-stone-400'">
