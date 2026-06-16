@@ -108,6 +108,16 @@ async function genChecklist() {
   finally { loadingChecklist.value = false }
 }
 
+// O11: 如果行程数据中已包含清单，自动加载
+import { onMounted, watch } from 'vue'
+function tryLoadChecklistFromPlan() {
+  if (props.tripPlan?.checklist && !checklist.value) {
+    checklist.value = props.tripPlan.checklist
+  }
+}
+onMounted(tryLoadChecklistFromPlan)
+watch(() => props.tripPlan, tryLoadChecklistFromPlan)
+
 function exportJSON() {
   if (!props.tripPlan?.trip_id) return
   const blob = new Blob([JSON.stringify(props.tripPlan, null, 2)], { type: 'application/json' })
@@ -267,7 +277,7 @@ const mealEmoji = (type: string) => {
       <h4 class="mb-3 text-sm font-semibold text-stone-700 dark:text-stone-200">📋 旅行准备清单</h4>
       <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
         <div v-for="(cat, ci) in checklist.categories" :key="ci" class="rounded-lg bg-stone-50 p-3 dark:bg-[#1e1e1e]">
-          <h5 class="mb-1.5 text-xs font-medium text-stone-600 dark:text-stone-300">{{ cat.icon }} {{ cat.name }}</h5>
+          <h5 class="mb-1.5 text-xs font-medium text-stone-600 dark:text-stone-300">{{ cat.icon }} {{ cat.name || cat.category }}</h5>
           <ul class="space-y-0.5">
             <li v-for="(item, ii) in cat.items" :key="ii" class="text-[11px] text-stone-500 dark:text-stone-400">
               <template v-if="typeof item === 'object'">

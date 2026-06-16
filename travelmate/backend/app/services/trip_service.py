@@ -345,7 +345,23 @@ async def generate_trip_plan(
     except Exception:
         logger.debug("景点照片补充失败（非致命）")
 
-    # O16: 保存到 trip_history（此时 itinerary 已包含照片）
+    # O22: 照片补充后，自动生成旅行清单并存入 itinerary
+    try:
+        from app.services.checklist_service import generate_checklist as _gen_checklist
+        weather_str = weather_text if weather_text != "暂无天气数据" else ""
+        checklist_data = await _gen_checklist(
+            destination, days, weather=weather_str,
+            composition=composition, allergies=allergies if isinstance(allergies, list) else [],
+        )
+        itinerary_dict = itinerary.model_dump()
+        itinerary_dict["checklist"] = checklist_data
+        # 重新构建 itinerary 以包含 checklist
+        itinerary = Itinerary(**itinerary_dict)
+        logger.info("清单已生成: %d 个分类", len(checklist_data.get("categories", [])))
+    except Exception as exc:
+        logger.warning("清单生成失败: %s - %s", type(exc).__name__, exc)
+
+    # O16: 保存到 trip_history（此时 itinerary 已包含照片+清单）
     try:
         from app.api.trip_history import save_trip_history
         history_data = itinerary.model_dump()

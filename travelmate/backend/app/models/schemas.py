@@ -162,6 +162,7 @@ class Itinerary(BaseModel):
     transport_summary: str | None = Field(default=None, description="全程交通概览")
     accommodation_summary: str | None = Field(default=None, description="住宿总览")
     tips: list[str] = Field(default_factory=list, description="旅行建议")
+    checklist: dict | None = Field(default=None, description="旅行准备清单")
     source_notes: list[str] = Field(
         default_factory=list,
         description="RAG 或规则生成产生的补充说明",

@@ -90,6 +90,26 @@ onMounted(fetchTrip)
             <li v-for="(tip, ti) in trip.itinerary.tips" :key="ti" class="text-xs" :class="props.dark ? 'text-stone-400' : 'text-stone-500'">• {{ tip }}</li>
           </ul>
         </div>
+
+        <!-- 旅行清单 -->
+        <div v-if="trip.itinerary.checklist?.categories?.length" class="rounded-xl border p-4" :class="props.dark ? 'border-stone-700 bg-[#2a2a2a]' : 'border-stone-200 bg-white'">
+          <h3 class="mb-2 font-semibold" :class="props.dark ? 'text-stone-300' : 'text-stone-700'">📋 旅行准备清单</h3>
+          <div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            <div v-for="(cat, ci) in trip.itinerary.checklist.categories" :key="ci" class="rounded-lg bg-stone-50 p-2.5 dark:bg-[#1e1e1e]">
+              <div class="mb-1 text-xs font-medium" :class="props.dark ? 'text-stone-300' : 'text-stone-600'">{{ cat.icon }} {{ cat.name || cat.category }}</div>
+              <ul class="space-y-0.5">
+                <li v-for="(item, ii) in cat.items" :key="ii" class="text-[11px]" :class="props.dark ? 'text-stone-400' : 'text-stone-500'">
+                  <span v-if="typeof item === 'object'">
+                    <span v-if="item.essential" class="text-red-400">★</span>
+                    {{ item.name }}
+                    <span v-if="item.note" class="text-stone-400">（{{ item.note }}）</span>
+                  </span>
+                  <span v-else>• {{ item }}</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
