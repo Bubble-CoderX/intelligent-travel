@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json as _json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -112,7 +112,7 @@ async def api_greet_session(req: GreetSessionRequest, request: Request = None):
         except (ValueError, _json.JSONDecodeError):
             pass
 
-    # ② 生成问候（传入客户端 IP 用于定位）
+# ② 生成问候（传入客户端 IP 用于定位）
     client_ip = _get_client_ip(request)
     result = await generate_greeting(req.device_id, client_ip=client_ip)
     greeting = result.get("greeting", "")
@@ -122,7 +122,6 @@ async def api_greet_session(req: GreetSessionRequest, request: Request = None):
 
     # ③ 保存到 conversations 表，标记 metadata 为主动服务
     meta_json = _json.dumps({"proactive_type": "greeting", "generated_by": "greet-session"}, ensure_ascii=False)
-    from datetime import datetime, timezone, timedelta
     local_time = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M:%S")
     conn.execute(
         "INSERT INTO conversations (device_id, session_id, role, content, metadata, created_at) VALUES (?, ?, 'assistant', ?, ?, ?)",
