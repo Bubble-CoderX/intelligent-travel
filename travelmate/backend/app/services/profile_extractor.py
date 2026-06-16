@@ -178,11 +178,10 @@ def extract_travel_profile(device_id: str, user_message: str) -> list[str]:
         "酒精", "酒", "咖啡", "茶", "辣椒", "辣", "海鲜", "内脏",
     ]
     new_dietary: list[str] = []
-    # 通用："不能吃X" / "吃不了X" / "对X过敏" / "X过敏"
+    # 通用："不能吃X" / "吃不了X" → 忌口=X（如"不能吃辣" → "辣"）
     for food in _FOOD_WORDS:
         if food in msg and ("不能吃" in msg or "吃不了" in msg or "不让吃" in msg):
-            restriction = f"不能吃{food}" if len(food) <= 3 else f"不能吃{food}"
-            new_dietary.append(restriction)
+            new_dietary.append(food)
         if food in msg and "过敏" in msg:
             new_dietary.append(f"{food}过敏")
     # 素食 / 清真
@@ -198,8 +197,16 @@ def extract_travel_profile(device_id: str, user_message: str) -> list[str]:
         if "冷" in msg or "凉" in msg: new_dietary.append("医嘱忌生冷")
     if new_dietary:
         existing = _get_profile_field(device_id, "dietary", [])
-        # 清理无效条目（如旧数据中的"不辣"）
-        existing = [e for e in existing if e not in ("不辣", "不吃辣的")]
+        # 清理无效/旧格式条目（如"不辣""不能吃辣" → 应为"辣"）
+        cleaned = []
+        for e in existing:
+            if e in ("不辣", "不吃辣的"):
+                continue  # 丢弃
+            if e.startswith("不能吃"):
+                cleaned.append(e[3:])  # "不能吃辣" → "辣"
+            else:
+                cleaned.append(e)
+        existing = cleaned
         merged = list(dict.fromkeys(existing + new_dietary))
         save_memory(device_id, "travel_profile", "dietary", json.dumps(merged, ensure_ascii=False))
         extracted.append("dietary")
