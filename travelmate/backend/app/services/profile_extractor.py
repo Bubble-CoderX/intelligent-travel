@@ -198,6 +198,8 @@ def extract_travel_profile(device_id: str, user_message: str) -> list[str]:
         if "冷" in msg or "凉" in msg: new_dietary.append("医嘱忌生冷")
     if new_dietary:
         existing = _get_profile_field(device_id, "dietary", [])
+        # 清理无效条目（如旧数据中的"不辣"）
+        existing = [e for e in existing if e not in ("不辣", "不吃辣的")]
         merged = list(dict.fromkeys(existing + new_dietary))
         save_memory(device_id, "travel_profile", "dietary", json.dumps(merged, ensure_ascii=False))
         extracted.append("dietary")
@@ -249,19 +251,22 @@ def extract_travel_profile(device_id: str, user_message: str) -> list[str]:
         "虾过敏", "蟹过敏", "鱼过敏", "坚果过敏", "大豆过敏",
         "酒精过敏", "酒过敏", "菠萝过敏", "猕猴桃过敏", "草莓过敏",
     ]
+    # 疑问词/无效匹配排除列表
+    _ALLERGY_EXCLUDE = {"什么", "哪些", "所有", "各种", "一些", "别的", "其他", "没有"}
     new_allergies: list[str] = []
     # 预定义的非食物过敏（花粉/鼻炎/尘螨/宠物毛发）
     for allergy_name, keywords in _ALLERGY_KEYWORDS.items():
         if any(kw in msg for kw in keywords):
             new_allergies.append(allergy_name)
-    # 通用食物过敏：检测"X过敏"模式，如果是食物则归饮食忌口
+    # 通用食物过敏：检测"X过敏"模式
     allergy_match = re.findall(r'([一-鿿]{1,6})过敏', msg)
     for item in allergy_match:
         if item in [kw for kws in _ALLERGY_KEYWORDS.values() for kw in kws]:
             continue  # 已在上面处理
+        if item in _ALLERGY_EXCLUDE or len(item) < 2:
+            continue  # 跳过疑问词和单字
         if any(food in item for food in _FOOD_WORDS):
-            # 食物过敏 → 归饮食忌口（已在上面处理）
-            continue
+            continue  # 食物过敏已在饮食忌口中处理
         new_allergies.append(f"{item}过敏")
     if new_allergies:
         existing = _get_profile_field(device_id, "allergies", [])
