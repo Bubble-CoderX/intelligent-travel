@@ -387,7 +387,17 @@ async def generate_greeting(device_id: str, client_ip: str | None = None) -> dic
 def start_scheduler() -> None:
     if not _scheduler.running:
         _scheduler.start()
-        logger.info("APScheduler 调度器已启动")
+        # O29: 每周日凌晨3点执行数据清理
+        async def _cleanup_job():
+            from app.services.data_cleanup import cleanup_old_data
+            cleanup_old_data()
+        _scheduler.add_job(
+            _cleanup_job,
+            trigger=CronTrigger(day_of_week="sun", hour=3, minute=0),
+            id="weekly_data_cleanup",
+            replace_existing=True,
+        )
+        logger.info("APScheduler 调度器已启动（含每周数据清理）")
 
 
 def shutdown_scheduler() -> None:

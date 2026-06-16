@@ -148,3 +148,18 @@ async def delete_trip(trip_id: int):
     db.commit()
     db.close()
     return {"ok": True}
+
+
+# ── O25: 反馈闭环 ──────────────────────────────────────
+
+@router.post("/{trip_id}/complete")
+async def mark_trip_complete(trip_id: int):
+    """标记行程为已完成。"""
+    db = get_db()
+    db.execute(
+        "UPDATE trip_history SET status='completed', updated_at=CURRENT_TIMESTAMP WHERE id=?",
+        (trip_id,),
+    )
+    db.commit()
+    db.close()
+    return {"ok": True}

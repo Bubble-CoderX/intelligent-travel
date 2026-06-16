@@ -36,6 +36,11 @@ const routes = [
     name: 'weather-records',
     component: () => import('@/views/WeatherRecord.vue'),
   },
+  {
+    path: '/travel-stats',
+    name: 'travel-stats',
+    component: () => import('@/views/TravelStats.vue'),
+  },
 ]
 
 const router = createRouter({

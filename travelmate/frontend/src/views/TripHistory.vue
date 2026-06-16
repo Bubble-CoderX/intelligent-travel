@@ -53,6 +53,14 @@ function formatDate(d: string) {
   return d.replace(/-/g, '/')
 }
 
+async function markComplete(id: number) {
+  try {
+    await api.post(`/trip-history/${id}/complete`)
+    const trip = trips.value.find(t => t.id === id)
+    if (trip) trip.status = 'completed'
+  } catch { /* ignore */ }
+}
+
 onMounted(fetchTrips)
 </script>
 
@@ -89,6 +97,7 @@ onMounted(fetchTrips)
             <span class="rounded-full px-2.5 py-0.5 text-xs font-medium" :class="statusMap[trip.status]?.color">
               {{ statusMap[trip.status]?.label || trip.status }}
             </span>
+            <button v-if="trip.status === 'planned'" class="text-[10px] text-green-500 hover:text-green-700 ml-1" @click.stop="markComplete(trip.id)">✓完成</button>
           </div>
           <div class="flex flex-wrap gap-2 text-xs" :class="props.dark ? 'text-stone-400' : 'text-stone-500'">
             <span v-if="trip.departure_city">🚗 {{ trip.departure_city }}→{{ trip.destination }}</span>

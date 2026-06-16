@@ -85,6 +85,9 @@ function handleRenameKeydown(e: KeyboardEvent, sessionId: string) {
       <button class="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm transition-colors" :class="$route?.path === '/weather-records' ? 'bg-stone-100 text-stone-800 dark:bg-[#2f2f2f] dark:text-stone-100' : 'text-stone-500 hover:bg-stone-50 hover:text-stone-700 dark:text-stone-400 dark:hover:bg-[#2a2a2a]'" @click="router.push('/weather-records')">
         <span class="text-base">🌤️</span> 天气记录
       </button>
+      <button class="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm transition-colors" :class="$route?.path === '/travel-stats' ? 'bg-stone-100 text-stone-800 dark:bg-[#2f2f2f] dark:text-stone-100' : 'text-stone-500 hover:bg-stone-50 hover:text-stone-700 dark:text-stone-400 dark:hover:bg-[#2a2a2a]'" @click="router.push('/travel-stats')">
+        <span class="text-base">📊</span> 出行统计
+      </button>
     </nav>
 
     <!-- 分隔线 -->

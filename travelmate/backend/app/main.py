@@ -18,6 +18,7 @@ from app.api.weather_intel import router as weather_intel_router
 from app.api.trip_history import router as trip_history_router, init_trip_history
 from app.api.chat_history import router as chat_history_router
 from app.api.weather_records import router as weather_records_router
+from app.api.travel_stats import router as travel_stats_router
 from app.api.knowledge_browse import router as knowledge_browse_router
 from app.models.database import init_db
 from app.services.proactive_service import register_ws, unregister_ws, start_scheduler, shutdown_scheduler
@@ -55,6 +56,7 @@ app.include_router(weather_intel_router)
 app.include_router(trip_history_router)
 app.include_router(chat_history_router)
 app.include_router(weather_records_router)
+app.include_router(travel_stats_router)
 app.include_router(knowledge_browse_router)
 
 
