@@ -398,7 +398,15 @@ async def generate_trip_plan(
         weather_str = weather_text if weather_text != "暂无天气数据" else ""
         checklist_data = await _gen_checklist(
             destination, days, weather=weather_str,
-            composition=composition, allergies=allergies if isinstance(allergies, list) else [],
+            composition=composition,
+            allergies=allergies if isinstance(allergies, list) else [],
+            special_needs=special_needs if isinstance(special_needs, list) else [],
+            dietary=_get_profile_field(device_id, "dietary", []) if isinstance(
+                _get_profile_field(device_id, "dietary", []), list
+            ) else [],
+            child_age=int(child_age) if child_age and str(child_age).isdigit() else None,
+            group_size=group_size,
+            budget_tier=budget_tier,
         )
         itinerary_dict = itinerary.model_dump()
         itinerary_dict["checklist"] = checklist_data
